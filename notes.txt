@@ -1,1 +1,2 @@
 "Banking System - Microservices Project" 
+"User Service - handles login and registration" 
