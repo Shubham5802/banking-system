@@ -1,8 +1,10 @@
 package com.banking.user_service.controller;
 
 import com.banking.user_service.dto.CreateUser;
+import com.banking.user_service.dto.LoginRequest;
 import com.banking.user_service.entity.Users;
 import com.banking.user_service.service.UserService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -20,8 +22,15 @@ public class UserController {
 
     @PostMapping("/register")
     public ResponseEntity<String> save(@RequestBody CreateUser user){
-        userService.save(user);
+        String status=userService.save(user);
 
-        return ResponseEntity.status(HttpStatus.CREATED).body("User Registered");
+        return ResponseEntity.status(HttpStatus.CREATED).body(status);
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<String> login(@Valid @RequestBody LoginRequest request){
+
+        String token=userService.login(request);
+        return ResponseEntity.ok(token);
     }
 }
