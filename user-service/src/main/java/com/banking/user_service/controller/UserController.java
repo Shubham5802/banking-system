@@ -2,7 +2,6 @@ package com.banking.user_service.controller;
 
 import com.banking.user_service.dto.CreateUser;
 import com.banking.user_service.dto.LoginRequest;
-import com.banking.user_service.entity.Users;
 import com.banking.user_service.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +20,7 @@ public class UserController {
     UserService userService;
 
     @PostMapping("/register")
-    public ResponseEntity<String> save(@RequestBody CreateUser user){
+    public ResponseEntity<String> save(@Valid @RequestBody CreateUser user){
         String status=userService.save(user);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(status);
