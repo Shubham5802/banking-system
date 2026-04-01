@@ -9,4 +9,5 @@ import org.springframework.stereotype.Service;
 public interface UserService {
         public String save(CreateUser user);
         public String login(LoginRequest request);
+        public Users getUser(Integer id);
 }

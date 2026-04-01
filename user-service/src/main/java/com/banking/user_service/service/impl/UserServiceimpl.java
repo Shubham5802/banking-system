@@ -7,8 +7,11 @@ import com.banking.user_service.repository.UserRepo;
 import com.banking.user_service.service.UserService;
 import com.banking.user_service.util.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.Optional;
 
 @Service
 public class UserServiceimpl implements UserService{
@@ -46,5 +49,13 @@ public class UserServiceimpl implements UserService{
             throw new RuntimeException("Invalid Password");
         }
         return jwtUtil.generateToken(request.getMail());
+    }
+
+    @Override
+    @Cacheable(value = "users", key = "#id")
+    public Users getUser(Integer id) {
+        System.out.println("Fetching user from DB for id: " + id);
+        return userRepo.findById(id)
+                .orElseThrow(()->new RuntimeException("User not found"));
     }
 }
