@@ -28,7 +28,7 @@ public class UserController {
     public ResponseEntity<String> login(@Valid @RequestBody LoginRequest request){
 
         String token=userService.login(request);
-        return ResponseEntity.ok(token+"feateure");
+        return ResponseEntity.ok(token);
     }
 
     @GetMapping("/{id}")

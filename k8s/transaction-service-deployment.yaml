@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+name: transaction-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transaction-service
+  template:
+   metadata:
+    labels:
+      app: transaction-service
+  spec:
+   containers:
+    - name: transaction-service
+      image: transaction-service:latest
+      imagePullPolicy: Never
+      ports:
+       - containerPort: 8083
+      env:
+       - name: SPRING_DATASOURCE_URL
+         value: "jdbc:mysql://mysql:3306/banking_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
+       - name: SPRING_DATASOURCE_USERNAME
+         value: "root"
+       - name: SPRING_DATASOURCE_PASSWORD
+         value: "postmig#2020"
+       - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+         value: "kafka:9092"
+       - name: ACCOUNT_SERVICE_URL
+         value: "http://account-service:8082"

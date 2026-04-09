@@ -14,6 +14,25 @@ services:
     ports:
       - "6379:6379"
 
+  transaction-service:
+    image: transaction-service:latest
+    container_name: banking-transaction-service
+    ports:
+      - "8083:8083"
+    environment:
+     SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/banking_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+     SPRING_DATASOURCE_USERNAME: root
+     SPRING_DATASOURCE_PASSWORD: postmig#2020
+     SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+     ACCOUNT_SERVICE_URL: http://account-service-9092
+    depends_on:
+      - mysql
+      - kafka
+      - account-service
+
+
+
+
   account-service:
     image: account-service:latest
     container_name: banking-account-service
