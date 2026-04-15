@@ -7,10 +7,12 @@ import com.banking.user_service.repository.UserRepo;
 import com.banking.user_service.service.UserService;
 import com.banking.user_service.util.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -25,7 +27,7 @@ public class UserServiceimpl implements UserService{
     @Autowired
     PasswordEncoder passwordEncoder;
 
-
+    @CacheEvict(value = "users", allEntries = true)
     @Override
     public String save(CreateUser user) {
         if(userRepo.existsByMail(user.getMail())){
@@ -57,5 +59,12 @@ public class UserServiceimpl implements UserService{
         System.out.println("Fetching user from DB for id: " + id);
         return userRepo.findById(id)
                 .orElseThrow(()->new RuntimeException("User not found"));
+    }
+
+    @Override
+    @Cacheable(value="users")
+    public List<Users> getAllUsers() {
+        System.out.println("getting data from DB");
+        return userRepo.findAll();
     }
 }

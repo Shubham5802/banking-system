@@ -58,4 +58,12 @@ public class TransactionEventConsumer {
         return Integer.parseInt(part.split("=")[1]);
     }
 
+    @KafkaListener(topics ="credit-success",groupId = "transaction-service-group")
+    public void handleCreditSuccess(String message){
+        Integer transactionId=extractId(message);
+        Transaction transaction=transactionRepo.findById(transactionId).orElseThrow();
+        transaction.setStatus("SUCCESS");
+        transactionRepo.save(transaction);
+    }
+
 }

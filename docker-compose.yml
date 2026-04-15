@@ -14,7 +14,23 @@ services:
     ports:
       - "6379:6379"
 
+  api-gateway:
+    image: api-gateway:latest
+    container_name: banking-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      USER_SERVICE_URL: http://user-service:8081
+      ACCOUNT_SERVICE_URL: http://account-service:8082
+      TRANSACTION_SERVICE_URL: http://transaction-service:8083
+    depends_on:
+      - user-service
+      - account-service
+      - transaction-service
+
+
   transaction-service:
+    restart: on-failure
     image: transaction-service:latest
     container_name: banking-transaction-service
     ports:
@@ -24,7 +40,7 @@ services:
      SPRING_DATASOURCE_USERNAME: root
      SPRING_DATASOURCE_PASSWORD: postmig#2020
      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-     ACCOUNT_SERVICE_URL: http://account-service-9092
+     ACCOUNT_SERVICE_URL: http://account-service:8082
     depends_on:
       - mysql
       - kafka
@@ -34,6 +50,7 @@ services:
 
 
   account-service:
+    restart: on-failure
     image: account-service:latest
     container_name: banking-account-service
     ports:
@@ -50,6 +67,7 @@ services:
       - user-service
 
   user-service:
+    restart: on-failure
     image: user-service:latest
     container_name: banking-user-service
     ports:
