@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Banking System - Learning Document</title>
+    <style>
+        body {
+            font-family: Calibri, Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            margin: 60px;
+            color: #1a1a1a;
+        }
+        h1 {
+            font-size: 26pt;
+            color: #1a3c6e;
+            border-bottom: 3px solid #1a3c6e;
+            padding-bottom: 8px;
+        }
+        h2 {
+            font-size: 18pt;
+            color: #1a3c6e;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 4px;
+            margin-top: 36px;
+        }
+        h3 {
+            font-size: 14pt;
+            color: #2e6da4;
+            margin-top: 24px;
+        }
+        h4 {
+            font-size: 12pt;
+            color: #444;
+            margin-top: 16px;
+            margin-bottom: 4px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            border-left: 4px solid #2e6da4;
+            padding: 12px 16px;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        code {
+            background-color: #f0f0f0;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+        th {
+            background-color: #1a3c6e;
+            color: white;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        td {
+            border: 1px solid #ccc;
+            padding: 8px 12px;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .note {
+            background-color: #fff8dc;
+            border-left: 4px solid #f0c040;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        .important {
+            background-color: #e8f0fe;
+            border-left: 4px solid #2e6da4;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        ul {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+        li {
+            margin-bottom: 4px;
+        }
+        .toc a {
+            color: #2e6da4;
+            text-decoration: none;
+        }
+        .subtitle {
+            color: #555;
+            font-size: 13pt;
+            margin-top: -10px;
+            margin-bottom: 30px;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Banking System &mdash; Learning Document</h1>
+<p class="subtitle">Spring Boot Microservices | JWT | OpenFeign | Kafka | Redis<br/>
+Written for: Shubham (6 years Java &mdash; JDBC, JSP, Spring MVC)<br/>
+Date: April 2026</p>
+
+<hr/>
+
+<h2>Table of Contents</h2>
+<div class="toc">
+<ol>
+    <li><a href="#architecture">Architecture Overview</a></li>
+    <li><a href="#concepts">Core Concepts Before Code</a></li>
+    <li><a href="#user-service">user-service Classes</a>
+        <ul>
+            <li>Users.java &mdash; Entity</li>
+            <li>UserRepo.java &mdash; Repository</li>
+            <li>CreateUser.java &mdash; DTO</li>
+            <li>LoginRequest.java &mdash; DTO</li>
+            <li>UserService.java &mdash; Interface</li>
+            <li>UserServiceImpl.java &mdash; Service</li>
+            <li>JwtUtil.java &mdash; Utility</li>
+            <li>JwtFilter.java &mdash; Security Filter</li>
+            <li>SecurityConfig.java &mdash; Configuration</li>
+            <li>AccountEventConsumer.java &mdash; Kafka Consumer</li>
+        </ul>
+    </li>
+    <li><a href="#account-service">account-service Classes</a>
+        <ul>
+            <li>Account.java &mdash; Entity</li>
+            <li>AccountType.java &mdash; Enum</li>
+            <li>AccountRepo.java &mdash; Repository</li>
+            <li>CreateAccountRequest.java &mdash; DTO</li>
+            <li>UserDto.java &mdash; DTO (cross-service)</li>
+            <li>AccountService.java &mdash; Interface</li>
+            <li>AccountServiceImpl.java &mdash; Service</li>
+            <li>AccountController.java &mdash; Controller</li>
+            <li>UserClient.java &mdash; Feign Client</li>
+            <li>FeignClientConfig.java &mdash; Feign Interceptor</li>
+            <li>AccountEventProducer.java &mdash; Kafka Producer</li>
+            <li>AccountServiceApplication.java &mdash; Main Class</li>
+        </ul>
+    </li>
+    <li><a href="#flow">End-to-End Request Flows</a></li>
+    <li><a href="#summary">Key Concepts Summary Table</a></li>
+    <li><a href="#errors">Common Errors and Fixes</a></li>
+</ol>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== ARCHITECTURE ==================== -->
+<h2 id="architecture">1. Architecture Overview</h2>
+
+<pre>
+Postman / React Frontend
+         |
+         | HTTP Request
+         ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │               user-service  (port: 8081)                │
+  │   POST /api/users/register  →  save user to DB          │
+  │   POST /api/users/login     →  return JWT token         │
+  │   GET  /api/users/{id}      →  return user details      │
+  └─────────────────────────────────────────────────────────┘
+         ▲
+         │ Feign HTTP call (with JWT forwarded)
+         │
+  ┌─────────────────────────────────────────────────────────┐
+  │             account-service  (port: 8082)               │
+  │   POST /api/accounts        →  create account           │
+  │      1. Verify user exists (via Feign → user-service)   │
+  │      2. Save account to DB                              │
+  │      3. Publish event to Kafka                          │
+  └─────────────────────────────────────────────────────────┘
+         │
+         │ Publishes message
+         ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │         Kafka Topic: "account-created"                  │
+  │              (runs in Docker container)                 │
+  └─────────────────────────────────────────────────────────┘
+         │
+         │ Consumed by
+         ▼
+  user-service (AccountEventConsumer) → currently logs to console
+                                      → future: send email / SMS / audit
+</pre>
+
+<div class="important">
+<strong>Key Principle &mdash; Microservices:</strong> Each service owns its own database table and business logic.
+Services communicate over HTTP (Feign) for synchronous calls and Kafka for asynchronous events.
+They are deployed independently and can be scaled independently.
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== CORE CONCEPTS ==================== -->
+<h2 id="concepts">2. Core Concepts Before Code</h2>
+
+<h3>Why Microservices over your old Monolith?</h3>
+<table>
+    <tr><th>Monolith (what you knew)</th><th>Microservices (what you are learning)</th></tr>
+    <tr><td>One big WAR/JAR deployed together</td><td>Multiple small services, each deployed separately</td></tr>
+    <tr><td>One database for everything</td><td>Each service owns its own data</td></tr>
+    <tr><td>Scale the whole app even if only one module is slow</td><td>Scale only the slow service</td></tr>
+    <tr><td>One bug can crash everything</td><td>Failure is isolated to one service</td></tr>
+    <tr><td>All code in one repo / codebase</td><td>Each service is an independent project</td></tr>
+</table>
+
+<h3>Why JWT over Sessions?</h3>
+<table>
+    <tr><th>Session-based (old way)</th><th>JWT (new way)</th></tr>
+    <tr><td>Server stores session in DB / memory</td><td>Server stores nothing &mdash; token is self-contained</td></tr>
+    <tr><td>Every request does a DB lookup for session</td><td>Server just verifies the signature &mdash; no DB hit</td></tr>
+    <tr><td>Doesn't scale across multiple servers</td><td>Stateless &mdash; works across any server</td></tr>
+    <tr><td>You knew this from JSP sessions</td><td>Token sent in Authorization header</td></tr>
+</table>
+
+<h3>Why Spring Data JPA over plain JDBC?</h3>
+<table>
+    <tr><th>JDBC (what you knew)</th><th>Spring Data JPA (new way)</th></tr>
+    <tr><td><code>PreparedStatement ps = conn.prepareStatement("SELECT ...")</code></td><td><code>userRepo.findById(id)</code></td></tr>
+    <tr><td>Write SQL manually for every operation</td><td>SQL generated from method names</td></tr>
+    <tr><td>Map ResultSet to object manually</td><td>Mapping done automatically</td></tr>
+    <tr><td>More control, more boilerplate</td><td>Less boilerplate, convention-based</td></tr>
+</table>
+
+<h3>JWT Structure</h3>
+<pre>
+eyJhbGciOiJIUzI1NiJ9  .  eyJzdWIiOiJ1c2VyQGdtYWlsLmNvbSJ9  .  abc123signature
+        ↓                              ↓                               ↓
+    HEADER                         PAYLOAD                        SIGNATURE
+  (algorithm)              (email, issued-at, expiry)        HMAC(header+payload, secretKey)
+</pre>
+<p>The server never stores the token. On each request it just re-verifies the signature using the secret key.
+If the token was tampered with, the signature won't match and the request is rejected.</p>
+
+<div class="page-break"></div>
+
+<!-- ==================== USER SERVICE ==================== -->
+<h2 id="user-service">3. user-service Classes</h2>
+
+<h3>Users.java &mdash; Entity</h3>
+<h4>What it is</h4>
+<p>A JPA entity class that represents a row in the <code>users</code> table in MySQL.</p>
+<h4>Why it exists</h4>
+<p>JPA needs a class to know what columns to create and how to map DB rows to Java objects.
+Without this, you would write raw <code>CREATE TABLE</code> SQL and manage all mappings manually like you did in JDBC.</p>
+<h4>Key decisions and why</h4>
+<ul>
+    <li><code>Integer id</code> not <code>int</code> &mdash; Before saving, JPA sets id to <code>null</code>. Java primitives cannot hold null, so <code>int</code> would cause a NullPointerException.</li>
+    <li><code>@GeneratedValue(strategy = GenerationType.IDENTITY)</code> &mdash; Tells MySQL to auto-increment the id. Without this, you must set the id yourself.</li>
+    <li><code>@EntityListeners(AuditingEntityListener.class)</code> + <code>@CreatedDate</code> &mdash; Spring automatically fills in the <code>creationDate</code> field when you call <code>save()</code>. You never set it manually. Requires <code>@EnableJpaAuditing</code> on the main class.</li>
+    <li>No <code>@NonNull</code> on fields &mdash; Lombok's <code>@NonNull</code> adds a null check inside the constructor. Jackson (JSON parser) uses the no-arg constructor when parsing incoming JSON requests, so the null check fires before values are set, causing 400 errors.</li>
+</ul>
+<pre>
+@Entity
+@Table(name = "users")
+@Data
+@NoArgsConstructor
+@EntityListeners(AuditingEntityListener.class)
+public class Users {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Integer id;
+    private String name;
+    private String mail;
+    private String password;
+    @CreatedDate
+    private LocalDateTime creationDate;
+}
+</pre>
+
+<h3>UserRepo.java &mdash; Repository</h3>
+<h4>What it is</h4>
+<p>An interface that gives you database operations without writing SQL.</p>
+<h4>Why it exists</h4>
+<p>In old JDBC you wrote <code>SELECT * FROM users WHERE mail = ?</code> and mapped the ResultSet manually.
+Spring Data JPA reads your method names and generates that SQL automatically.</p>
+<h4>How it works</h4>
+<pre>
+@Repository
+public interface UserRepo extends JpaRepository&lt;Users, Integer&gt; {
+    boolean existsByMail(String mail);       // SELECT COUNT(*) WHERE mail = ?
+    Optional&lt;Users&gt; findByMail(String mail); // SELECT * WHERE mail = ?
+}
+</pre>
+<p><code>JpaRepository&lt;Users, Integer&gt;</code> &mdash; first type is the entity class, second is the primary key type.
+This gives you <code>save()</code>, <code>findById()</code>, <code>findAll()</code>, <code>deleteById()</code> for free.</p>
+
+<h3>CreateUser.java &mdash; DTO (Data Transfer Object)</h3>
+<h4>What it is</h4>
+<p>A plain class representing the JSON body the client sends when registering.</p>
+<h4>Why it exists</h4>
+<p>You never expose your <code>Users</code> entity directly as a request/response object because:</p>
+<ul>
+    <li>The entity has <code>id</code> and <code>creationDate</code> which the client should not send</li>
+    <li>The entity stores BCrypt-hashed passwords &mdash; you don't want to expose that in responses</li>
+    <li>DTOs let you add validation annotations without polluting the entity</li>
+</ul>
+<pre>
+@Data
+public class CreateUser {
+    @NotBlank(message = "Name is required")
+    private String name;
+    @NotBlank(message = "Email is required")
+    private String mail;
+    @NotBlank(message = "Password is required")
+    private String password;
+}
+</pre>
+<p><code>@NotBlank</code> validation fires when the controller uses <code>@Valid @RequestBody</code>.
+If the field is blank or null, Spring returns a 400 Bad Request automatically before your service code runs.</p>
+
+<h3>LoginRequest.java &mdash; DTO</h3>
+<h4>What it is</h4>
+<p>Holds <code>mail</code> and <code>password</code> for the <code>POST /api/users/login</code> endpoint.</p>
+<h4>Why it exists</h4>
+<p>Same DTO separation principle. Login only needs two fields, not the full user structure.
+Keeping it separate makes the API contract clear.</p>
+
+<h3>UserService.java &mdash; Interface</h3>
+<h4>What it is</h4>
+<p>Declares the operations available in the user service layer.</p>
+<h4>Why it exists</h4>
+<p>You program to an interface, not a concrete class. This is the same principle you used in Spring MVC.
+If tomorrow you replace <code>UserServiceImpl</code> with a different implementation, the controller doesn't change.
+It also makes unit testing easier because you can mock the interface.</p>
+<div class="note">
+<strong>Common mistake:</strong> Putting <code>@Service</code> on the interface instead of the implementation.
+Spring tries to register the interface itself as a bean and fails. Always put <code>@Service</code> on the implementation class (<code>UserServiceImpl</code>).
+</div>
+
+<h3>UserServiceImpl.java &mdash; Service (Business Logic)</h3>
+<h4>What it is</h4>
+<p>The actual implementation of the business rules. The brain of user-service.</p>
+<h4>Why it exists</h4>
+<p>Controllers should only handle HTTP concerns (read the request, return a response).
+All business logic lives in the service layer. This separation makes the code testable and maintainable.</p>
+<h4>Key method flows</h4>
+<pre>
+save(CreateUser user):
+  1. if (userRepo.existsByMail(user.getMail())) throw exception  // prevent duplicate
+  2. encode password:  passwordEncoder.encode(user.getPassword())
+  3. map DTO fields to Users entity
+  4. userRepo.save(entity)
+  5. return "User registered successfully"
+
+login(LoginRequest request):
+  1. Users user = userRepo.findByMail(request.getMail())
+                          .orElseThrow(() -> new exception)
+  2. if (!passwordEncoder.matches(request.getPassword(), user.getPassword()))
+         throw exception  // wrong password
+  3. return jwtUtil.generateToken(user.getMail())
+
+getUser(Integer id):
+  1. return userRepo.findById(id)
+                    .orElseThrow(() -> new exception)
+</pre>
+<div class="important">
+<strong>Why BCrypt?</strong> You never store plain passwords. BCrypt is a one-way hashing algorithm.
+Even if your database is stolen, attackers cannot reverse the hash to get the original password.
+<code>passwordEncoder.matches(raw, hashed)</code> hashes the raw input and compares &mdash; it doesn't decrypt.
+</div>
+
+<h3>JwtUtil.java &mdash; Utility</h3>
+<h4>What it is</h4>
+<p>A Spring component that creates and validates JWT tokens.</p>
+<h4>Why it exists</h4>
+<p>After login, you don't want the user to send their username and password on every request.
+JWT is a signed token issued once at login. On future requests, the server verifies the signature without hitting the database.</p>
+<h4>How each method works</h4>
+<pre>
+@Component
+public class JwtUtil {
+    @Value("${jwt.secret}") private String secret;
+    @Value("${jwt.expiration}") private Long expiration;
+
+    // Converts the secret string to a cryptographic key
+    private SecretKey getSigningKey() {
+        return Keys.hmacShaKeyFor(secret.getBytes());
+    }
+
+    // Builds a JWT: subject=email, signed with secret key, expires after 24 hours
+    public String generateToken(String email) {
+        return Jwts.builder()
+            .subject(email)
+            .issuedAt(new Date())
+            .expiration(new Date(System.currentTimeMillis() + expiration))
+            .signWith(getSigningKey())
+            .compact();
+    }
+
+    // Decodes and verifies the token. Throws exception if expired or tampered.
+    private Claims getClaims(String token) {
+        return Jwts.parser()
+            .verifyWith(getSigningKey())
+            .build()
+            .parseSignedClaims(token)
+            .getPayload();
+    }
+
+    // Reads the email (subject) stored in the token payload
+    public String extractEmail(String token) {
+        return getClaims(token).getSubject();
+    }
+
+    // Returns true if token is valid, false if expired or invalid
+    public boolean isTokenValid(String token) {
+        try { getClaims(token); return true; }
+        catch (Exception e) { return false; }
+    }
+}
+</pre>
+<p><code>@Value("${jwt.secret}")</code> &mdash; Spring injects the value from <code>application.yml</code>.
+The key must be at the ROOT level in YAML, not nested under <code>spring:</code>.</p>
+
+<h3>JwtFilter.java &mdash; Security Filter</h3>
+<h4>What it is</h4>
+<p>A filter that intercepts every HTTP request before it reaches your controller and validates the JWT token.</p>
+<h4>Why it exists</h4>
+<p>You need to check the JWT on every protected request. Doing this check inside every controller method
+would be repetitive and error-prone. A filter does it once, automatically, for all requests.</p>
+<h4>How it works step by step</h4>
+<pre>
+Request arrives at server
+    ↓
+JwtFilter.doFilterInternal() is called
+    ↓
+Read header: "Authorization: Bearer eyJhbGci..."
+    ↓
+Strip "Bearer " prefix → get the raw token
+    ↓
+jwtUtil.isTokenValid(token) → true or false
+    ↓
+If valid: extract email → create Authentication object
+          → set in SecurityContextHolder
+          (tells Spring Security: "this request is authenticated as this email")
+    ↓
+filterChain.doFilter() → pass request to next filter / controller
+</pre>
+<div class="note">
+<strong>Why OncePerRequestFilter?</strong> In some cases (redirects, forwards), a filter can be called
+multiple times for a single user request. <code>OncePerRequestFilter</code> guarantees it runs exactly once.
+</div>
+
+<h3>SecurityConfig.java &mdash; Security Configuration</h3>
+<h4>What it is</h4>
+<p>Configures Spring Security: which endpoints are open, which are protected, and how the JWT filter plugs in.</p>
+<h4>Why it exists</h4>
+<p>Spring Security blocks ALL endpoints by default when added to the classpath.
+You must explicitly configure which endpoints are public (<code>/register</code>, <code>/login</code>) and which require authentication.</p>
+<h4>Key decisions explained</h4>
+<table>
+    <tr><th>Configuration</th><th>Why</th></tr>
+    <tr><td><code>csrf().disable()</code></td><td>CSRF attacks target browser cookie-based sessions. We use JWT in headers &mdash; CSRF doesn't apply to us.</td></tr>
+    <tr><td><code>sessionManagement(STATELESS)</code></td><td>Tells Spring not to create HTTP sessions. JWT is stateless &mdash; server remembers nothing between requests.</td></tr>
+    <tr><td><code>addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)</code></td><td>Run our JWT filter before Spring's default login filter so we handle authentication first.</td></tr>
+    <tr><td><code>@Bean PasswordEncoder</code></td><td>BCrypt encoder declared as a Spring bean so it can be injected in ServiceImpl and elsewhere.</td></tr>
+</table>
+<pre>
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+    @Autowired JwtFilter jwtFilter;
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/users/register", "/api/users/login").permitAll()
+                .anyRequest().authenticated()
+            )
+            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+}
+</pre>
+
+<h3>AccountEventConsumer.java &mdash; Kafka Consumer</h3>
+<h4>What it is</h4>
+<p>A Kafka listener in user-service that receives events published by account-service.</p>
+<h4>Why it exists</h4>
+<p>When account-service creates an account, other services may need to react.
+Instead of account-service calling those services directly (tight coupling),
+it publishes an event to Kafka and interested services listen independently.</p>
+<h4>What it does right now</h4>
+<p>Currently just logs to the console. In a real system this would trigger a welcome email,
+SMS notification, audit log entry, etc.</p>
+<pre>
+@Component
+public class AccountEventConsumer {
+
+    @KafkaListener(topics = "account-created", groupId = "user-service-group")
+    public void handleAccountCreated(String message) {
+        System.out.println("Account created event received: " + message);
+        // TODO: send welcome email, write audit log, etc.
+    }
+}
+</pre>
+<p><code>@KafkaListener</code> &mdash; Spring polls Kafka in a background thread and calls this method
+whenever a new message arrives on the <code>account-created</code> topic.</p>
+
+<div class="page-break"></div>
+
+<!-- ==================== ACCOUNT SERVICE ==================== -->
+<h2 id="account-service">4. account-service Classes</h2>
+
+<h3>Account.java &mdash; Entity</h3>
+<h4>What it is</h4>
+<p>JPA entity representing a row in the <code>account</code> table.</p>
+<h4>Key decisions and why</h4>
+<ul>
+    <li><code>BigDecimal balance</code> not <code>double</code> &mdash; Never use <code>double</code> for money.
+    Floating point arithmetic is imprecise: <code>0.1 + 0.2 = 0.30000000000000004</code> in Java.
+    <code>BigDecimal</code> is exact. This is a critical rule in any financial application.</li>
+    <li><code>Integer userId</code> not <code>@ManyToOne Users join</code> &mdash; In microservices, each service owns its own database.
+    account-service does not have the <code>users</code> table, so a JPA join is impossible.
+    You store just the ID and fetch user details via Feign when needed.</li>
+    <li><code>@Enumerated(EnumType.STRING)</code> &mdash; Stores <code>"SAVINGS"</code> or <code>"CURRENT"</code> as text in the DB.
+    If you used <code>EnumType.ORDINAL</code> it stores <code>0</code> or <code>1</code>.
+    If you ever reorder your enum values, ordinal storage would corrupt all existing data. Always use STRING.</li>
+</ul>
+
+<h3>AccountType.java &mdash; Enum</h3>
+<h4>What it is</h4>
+<p>Defines the valid account types.</p>
+<pre>
+public enum AccountType {
+    SAVINGS,
+    CURRENT
+}
+</pre>
+<p>Using an enum instead of a plain String prevents invalid values like <code>"SAVNGS"</code> from being stored.
+Validation happens at the Java level before it reaches the database.</p>
+
+<h3>AccountRepo.java &mdash; Repository</h3>
+<p>Same concept as <code>UserRepo</code>. Extends <code>JpaRepository&lt;Account, Integer&gt;</code>
+to get free CRUD operations for the Account entity.</p>
+
+<h3>CreateAccountRequest.java &mdash; DTO</h3>
+<h4>What it is</h4>
+<p>The incoming request body for <code>POST /api/accounts</code>.</p>
+<ul>
+    <li><code>userId</code> &mdash; which user owns this account</li>
+    <li><code>initialDeposit</code> &mdash; opening balance (BigDecimal)</li>
+    <li><code>accountType</code> &mdash; SAVINGS or CURRENT</li>
+</ul>
+
+<h3>UserDto.java &mdash; DTO (cross-service)</h3>
+<h4>What it is</h4>
+<p>A local copy of user fields that account-service needs from user-service.</p>
+<h4>Why it exists</h4>
+<p>account-service cannot import user-service's <code>Users</code> entity (they are separate Maven projects with no shared dependency).
+When Feign calls user-service and gets a JSON response, it automatically maps the JSON fields into this DTO class.</p>
+<pre>
+@Data
+public class UserDto {
+    private Integer id;
+    private String name;
+    private String mail;
+}
+</pre>
+
+<h3>AccountService.java &mdash; Interface</h3>
+<p>Declares the service contract. Same purpose as <code>UserService</code> in user-service &mdash;
+program to interfaces for flexibility and testability.</p>
+
+<h3>AccountServiceImpl.java &mdash; Service</h3>
+<h4>What it is</h4>
+<p>Business logic for creating a bank account.</p>
+<h4>Full flow when createAccount() is called</h4>
+<pre>
+1. userClient.getUserById(request.getUserId())
+      → Feign makes HTTP call: GET http://localhost:8081/api/users/{id}
+      → If user does not exist: user-service returns 404
+        → Feign throws FeignException → account is NOT created
+      → If user exists: returns UserDto, execution continues
+
+2. Build Account object:
+      → accountNumber = random UUID, first 10 chars, uppercase
+      → balance = request.getInitialDeposit()
+      → userId = request.getUserId()
+      → accountType = request.getAccountType()
+
+3. accountRepo.save(account) → INSERT into MySQL
+
+4. accountEventProducer.publishAccountCreated(message)
+      → Sends "userId=X, account=XXXXXXXX" to Kafka topic "account-created"
+      → Returns immediately (async) — does not wait for any consumer
+
+5. return "account created"
+</pre>
+
+<h3>AccountController.java &mdash; Controller</h3>
+<h4>What it is</h4>
+<p>Handles incoming HTTP requests. Delegates all logic to the service layer.</p>
+<pre>
+@RestController
+@RequestMapping("/api/accounts")
+public class AccountController {
+    @Autowired AccountService accountService;
+
+    @PostMapping
+    public ResponseEntity&lt;String&gt; createAccount(@Valid @RequestBody CreateAccountRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(accountService.createAccount(request));
+    }
+}
+</pre>
+<p>The controller has no business logic &mdash; it only reads the request and returns the response.
+This keeps it thin and easy to test.</p>
+
+<h3>UserClient.java &mdash; Feign Client</h3>
+<h4>What it is</h4>
+<p>An interface that acts as an HTTP client to call user-service endpoints.</p>
+<h4>Why it exists (comparison with what you knew)</h4>
+<table>
+    <tr><th>Old way (HttpURLConnection / RestTemplate)</th><th>Feign way</th></tr>
+    <tr><td>Write URL, build connection, read stream, parse JSON manually</td><td>Declare an interface method &mdash; Spring generates all the code</td></tr>
+    <tr><td>20-30 lines of boilerplate</td><td>3 lines</td></tr>
+    <tr><td>Error-prone (typos in URL, manual parsing)</td><td>Type-safe, compile-time checked</td></tr>
+</table>
+<pre>
+@FeignClient(name = "user-service", url = "http://localhost:8081")
+public interface UserClient {
+    @GetMapping("/api/users/{id}")
+    UserDto getUserById(@PathVariable Integer id);
+}
+</pre>
+<p><code>@FeignClient</code> tells Spring to generate an HTTP client implementation for this interface.
+<code>name</code> is a logical name; <code>url</code> is the base URL of user-service.
+The method mirrors the controller endpoint in user-service exactly.</p>
+<div class="note">
+<strong>Version compatibility rule:</strong> Spring Cloud (which provides Feign) requires a specific Spring Boot version.
+Spring Cloud 2025.0.0 requires Spring Boot 3.5.x. This caused hours of debugging &mdash; always check the
+compatibility matrix at start.spring.io before choosing versions.
+</div>
+
+<h3>FeignClientConfig.java &mdash; Feign Request Interceptor</h3>
+<h4>What it is</h4>
+<p>A configuration class that automatically forwards the JWT token from the incoming request to all outgoing Feign calls.</p>
+<h4>Why it exists</h4>
+<p>user-service's <code>GET /api/users/{id}</code> is a protected endpoint &mdash; it requires a valid JWT token.
+When account-service calls it via Feign, Feign doesn't attach any headers by default.
+Without this interceptor, Feign calls return 401 Unauthorized.</p>
+<h4>How it works</h4>
+<pre>
+Frontend sends request to account-service:
+  Authorization: Bearer eyJhbGci...
+
+FeignClientConfig interceptor runs before every Feign call:
+  1. RequestContextHolder.getRequestAttributes()
+        → Spring stores the current HTTP request in a thread-local variable
+        → This lets you access the request from anywhere (not just the controller)
+  2. request.getHeader("Authorization")  → get the JWT from incoming request
+  3. template.header("Authorization", authHeader)
+        → attach it to the outgoing Feign request
+
+Result: Feign call to user-service includes the JWT automatically
+</pre>
+<pre>
+@Configuration
+public class FeignClientConfig {
+    @Bean
+    public RequestInterceptor requestInterceptor() {
+        return template -> {
+            ServletRequestAttributes attributes =
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes != null) {
+                String authHeader = attributes.getRequest().getHeader("Authorization");
+                if (authHeader != null) {
+                    template.header("Authorization", authHeader);
+                }
+            }
+        };
+    }
+}
+</pre>
+
+<h3>AccountEventProducer.java &mdash; Kafka Producer</h3>
+<h4>What it is</h4>
+<p>A Spring component that sends messages to the Kafka topic <code>account-created</code>.</p>
+<h4>Why it exists</h4>
+<p>After creating an account, other systems may need to react (send email, update analytics, write audit log).
+Instead of account-service calling all those systems directly (tight coupling, slow, fragile),
+it publishes one event to Kafka. Any number of consumers can listen without account-service knowing about them.</p>
+<h4>Kafka vs Feign &mdash; when to use which</h4>
+<table>
+    <tr><th></th><th>Feign (sync)</th><th>Kafka (async)</th></tr>
+    <tr><td>When to use</td><td>When you need the response to continue (e.g., verify user exists)</td><td>When you just need to notify and move on</td></tr>
+    <tr><td>account-service waits?</td><td>Yes &mdash; waits for user-service response</td><td>No &mdash; fires and continues immediately</td></tr>
+    <tr><td>Failure impact</td><td>If user-service is down, account creation fails</td><td>If consumer is down, event is stored in Kafka until consumer recovers</td></tr>
+</table>
+<pre>
+@Component
+public class AccountEventProducer {
+    @Autowired
+    private KafkaTemplate&lt;String, String&gt; kafkaTemplate;
+
+    public void publishAccountCreated(String message) {
+        kafkaTemplate.send("account-created", message);
+    }
+}
+</pre>
+<p><code>KafkaTemplate</code> &mdash; Spring's Kafka wrapper, same idea as <code>JdbcTemplate</code> wrapping JDBC boilerplate.
+<code>kafkaTemplate.send(topic, message)</code> is the only line you need to publish an event.
+Kafka automatically creates the topic on first use.</p>
+
+<h3>AccountServiceApplication.java &mdash; Main Class</h3>
+<pre>
+@SpringBootApplication
+@EnableJpaAuditing      // enables @CreatedDate on entities
+@EnableFeignClients     // scans for @FeignClient interfaces and generates implementations
+public class AccountServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(AccountServiceApplication.class, args);
+    }
+}
+</pre>
+<ul>
+    <li><code>@EnableJpaAuditing</code> &mdash; Without this, <code>@CreatedDate</code> fields are never populated.</li>
+    <li><code>@EnableFeignClients</code> &mdash; Without this, Spring doesn't scan for Feign client interfaces and they won't work.</li>
+</ul>
+
+<div class="page-break"></div>
+
+<!-- ==================== END TO END FLOWS ==================== -->
+<h2 id="flow">5. End-to-End Request Flows</h2>
+
+<h3>Flow 1: User Registration</h3>
+<pre>
+POST /api/users/register
+  Body: { "name": "Shubham", "mail": "s@gmail.com", "password": "pass123" }
+
+1. JwtFilter: no Authorization header → skip, pass through
+2. SecurityConfig: /register is permitAll() → allow
+3. UserController.save() → calls UserService.save()
+4. UserServiceImpl:
+     a. userRepo.existsByMail("s@gmail.com") → false → continue
+     b. passwordEncoder.encode("pass123") → "$2a$10$xyz..."
+     c. Build Users entity, set name, mail, hashed password
+     d. userRepo.save(entity) → INSERT INTO users (...)
+     e. @CreatedDate fills creationDate automatically
+5. Return 201 Created, body: "User registered successfully"
+</pre>
+
+<h3>Flow 2: User Login</h3>
+<pre>
+POST /api/users/login
+  Body: { "mail": "s@gmail.com", "password": "pass123" }
+
+1. JwtFilter: no token → skip
+2. SecurityConfig: /login is permitAll() → allow
+3. UserController.login() → UserServiceImpl.login()
+4. UserServiceImpl:
+     a. userRepo.findByMail("s@gmail.com") → returns Users entity
+     b. passwordEncoder.matches("pass123", "$2a$10$xyz...") → true
+     c. jwtUtil.generateToken("s@gmail.com") → "eyJhbGci..."
+5. Return 200 OK, body: "eyJhbGci..."   ← this is the JWT token
+</pre>
+
+<h3>Flow 3: Create Account</h3>
+<pre>
+POST /api/accounts
+  Header: Authorization: Bearer eyJhbGci...
+  Body: { "userId": 1, "initialDeposit": 5000.00, "accountType": "SAVINGS" }
+
+1. JwtFilter:
+     a. reads "Bearer eyJhbGci..."
+     b. jwtUtil.isTokenValid(token) → true
+     c. jwtUtil.extractEmail(token) → "s@gmail.com"
+     d. sets SecurityContext → request is authenticated
+2. SecurityConfig: authenticated → allow
+3. AccountController → AccountServiceImpl.createAccount()
+4. FeignClientConfig interceptor: reads Authorization header from current request,
+     attaches it to the outgoing Feign call
+5. userClient.getUserById(1):
+     → GET http://localhost:8081/api/users/1
+     → user-service validates the forwarded JWT
+     → returns { "id": 1, "name": "Shubham", "mail": "s@gmail.com" }
+     → mapped to UserDto
+6. Build Account: accountNumber=random, balance=5000, userId=1, type=SAVINGS
+7. accountRepo.save(account) → INSERT INTO account (...)
+8. accountEventProducer.publishAccountCreated("userId=1, account=XXXXXXXX")
+     → KafkaTemplate sends to topic "account-created"
+     → Returns immediately, does not wait
+9. Return 201 Created, body: "account created"
+
+Meanwhile in user-service (asynchronously):
+10. AccountEventConsumer.handleAccountCreated() receives the message
+     → prints: "Account created event received: userId=1, account=XXXXXXXX"
+</pre>
+
+<div class="page-break"></div>
+
+<!-- ==================== SUMMARY TABLE ==================== -->
+<h2 id="summary">6. Key Concepts Summary Table</h2>
+
+<table>
+    <tr>
+        <th>Concept</th>
+        <th>Old way (JDBC/JSP/Spring MVC)</th>
+        <th>New way (Spring Boot Microservices)</th>
+    </tr>
+    <tr>
+        <td>DB access</td>
+        <td><code>ResultSet rs = stmt.executeQuery(sql)</code></td>
+        <td><code>userRepo.findById(id)</code></td>
+    </tr>
+    <tr>
+        <td>SQL writing</td>
+        <td>Manual SQL strings everywhere</td>
+        <td>Method names generate SQL automatically</td>
+    </tr>
+    <tr>
+        <td>Password storage</td>
+        <td>Plain text / MD5</td>
+        <td>BCrypt (one-way hash, cannot be reversed)</td>
+    </tr>
+    <tr>
+        <td>Authentication</td>
+        <td>HttpSession in DB or server memory</td>
+        <td>JWT token (stateless, no server storage)</td>
+    </tr>
+    <tr>
+        <td>Request filtering</td>
+        <td>Servlet Filter or Interceptor</td>
+        <td>OncePerRequestFilter with SecurityContext</td>
+    </tr>
+    <tr>
+        <td>HTTP calls between services</td>
+        <td>HttpURLConnection / RestTemplate boilerplate</td>
+        <td>Feign Client interface (3 lines)</td>
+    </tr>
+    <tr>
+        <td>Service-to-service notification</td>
+        <td>Direct method call or REST call (tight coupling)</td>
+        <td>Kafka event (loose coupling, async)</td>
+    </tr>
+    <tr>
+        <td>Config values</td>
+        <td>Properties file, manual reading</td>
+        <td><code>@Value("${key}")</code> auto-injected</td>
+    </tr>
+    <tr>
+        <td>Deployment</td>
+        <td>One WAR to one server</td>
+        <td>Multiple services, each in own Docker container</td>
+    </tr>
+    <tr>
+        <td>Monetary values</td>
+        <td>Often double (wrong!)</td>
+        <td>BigDecimal (exact, no floating point errors)</td>
+    </tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== COMMON ERRORS ==================== -->
+<h2 id="errors">7. Common Errors and Fixes (Lessons Learned)</h2>
+
+<table>
+    <tr>
+        <th>Error</th>
+        <th>Cause</th>
+        <th>Fix</th>
+    </tr>
+    <tr>
+        <td>400 Bad Request on register</td>
+        <td><code>@NonNull</code> on entity fields conflicted with Jackson's no-arg constructor</td>
+        <td>Remove <code>@NonNull</code> from entity fields</td>
+    </tr>
+    <tr>
+        <td>Cannot map null into type int</td>
+        <td>JPA sets id to null before save; <code>int</code> can't hold null</td>
+        <td>Change <code>int id</code> to <code>Integer id</code></td>
+    </tr>
+    <tr>
+        <td>Field 'id' doesn't have a default value</td>
+        <td>Table was created before <code>@GeneratedValue</code> was added, so no AUTO_INCREMENT</td>
+        <td>Drop the table and restart (JPA recreates it with AUTO_INCREMENT)</td>
+    </tr>
+    <tr>
+        <td>No property 'email' found for type 'Users'</td>
+        <td>Repository method said <code>existsByEmail</code> but field is named <code>mail</code></td>
+        <td>Rename to <code>existsByMail</code> / <code>findByMail</code></td>
+    </tr>
+    <tr>
+        <td>Cannot resolve 'NotBlank'</td>
+        <td>Missing validation dependency in pom.xml</td>
+        <td>Add <code>spring-boot-starter-validation</code></td>
+    </tr>
+    <tr>
+        <td>jwt.secret not found / null</td>
+        <td>jwt config was nested under <code>spring:</code> in YAML</td>
+        <td>Move jwt config to root level (same level as spring, server)</td>
+    </tr>
+    <tr>
+        <td>Encoded password does not look like BCrypt</td>
+        <td>User was registered before BCrypt was wired up &mdash; plain password stored in DB</td>
+        <td>Delete the old user row, re-register</td>
+    </tr>
+    <tr>
+        <td>Spring Cloud not compatible with Spring Boot</td>
+        <td>Spring Cloud 2025.0.0 requires Boot 3.5.x. Using 3.3.5 fails.</td>
+        <td>Always check compatibility matrix. Used Boot 3.5.13 for account-service.</td>
+    </tr>
+    <tr>
+        <td>Feign calls return 401</td>
+        <td>Feign doesn't forward the JWT automatically</td>
+        <td>Added <code>FeignClientConfig</code> with <code>RequestInterceptor</code> to forward Authorization header</td>
+    </tr>
+    <tr>
+        <td>LEADER_NOT_AVAILABLE warnings from Kafka</td>
+        <td>Consumer connected before Kafka finished creating the topic</td>
+        <td>Normal / harmless. Kafka creates the topic and resolves within seconds.</td>
+    </tr>
+    <tr>
+        <td>NoSuchBeanDefinitionException for service</td>
+        <td><code>@Service</code> was on the interface instead of the implementation class</td>
+        <td>Put <code>@Service</code> only on <code>UserServiceImpl</code>, not on <code>UserService</code> interface</td>
+    </tr>
+</table>
+
+<br/><br/>
+<hr/>
+<p style="color:#888; font-size:10pt; text-align:center;">
+    Banking System Learning Document &mdash; Phase 1 Complete<br/>
+    Next: Redis Caching &rarr; Docker &rarr; Kubernetes &rarr; React Frontend
+</p>
+
+</body>
+</html>

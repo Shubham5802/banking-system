@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Banking System - Learning Document 2</title>
+    <style>
+        body {
+            font-family: Calibri, Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            margin: 60px;
+            color: #1a1a1a;
+        }
+        h1 {
+            font-size: 26pt;
+            color: #1a3c6e;
+            border-bottom: 3px solid #1a3c6e;
+            padding-bottom: 8px;
+        }
+        h2 {
+            font-size: 18pt;
+            color: #1a3c6e;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 4px;
+            margin-top: 36px;
+        }
+        h3 {
+            font-size: 14pt;
+            color: #2e6da4;
+            margin-top: 24px;
+        }
+        h4 {
+            font-size: 12pt;
+            color: #444;
+            margin-top: 16px;
+            margin-bottom: 4px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            border-left: 4px solid #2e6da4;
+            padding: 12px 16px;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        code {
+            background-color: #f0f0f0;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+        th {
+            background-color: #1a3c6e;
+            color: white;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        td {
+            border: 1px solid #ccc;
+            padding: 8px 12px;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .note {
+            background-color: #fff8dc;
+            border-left: 4px solid #f0c040;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        .important {
+            background-color: #e8f0fe;
+            border-left: 4px solid #2e6da4;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        ul {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+        li {
+            margin-bottom: 4px;
+        }
+        .toc a {
+            color: #2e6da4;
+            text-decoration: none;
+        }
+        .subtitle {
+            color: #555;
+            font-size: 13pt;
+            margin-top: -10px;
+            margin-bottom: 30px;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Banking System &mdash; Learning Document 2</h1>
+<p class="subtitle">Redis Caching | Kafka (Deep Dive) | Docker | Kubernetes<br/>
+Written for: Shubham (6 years Java &mdash; JDBC, JSP, Spring MVC)<br/>
+Date: April 2026 &mdash; Continues from Document 1</p>
+
+<hr/>
+
+<h2>Table of Contents</h2>
+<div class="toc">
+<ol>
+    <li><a href="#redis">Redis Caching</a>
+        <ul>
+            <li>What is Redis</li>
+            <li>Why Redis in banking system</li>
+            <li>How @Cacheable works</li>
+            <li>Changes made to user-service</li>
+        </ul>
+    </li>
+    <li><a href="#kafka">Kafka Deep Dive</a>
+        <ul>
+            <li>What Kafka is and why it exists</li>
+            <li>Core concepts: Topic, Producer, Consumer, Group</li>
+            <li>Kafka vs Feign — when to use which</li>
+            <li>AccountEventProducer explained</li>
+            <li>AccountEventConsumer explained</li>
+            <li>Docker setup for Kafka</li>
+        </ul>
+    </li>
+    <li><a href="#docker">Docker</a>
+        <ul>
+            <li>Image vs Container</li>
+            <li>Dockerfile explained line by line</li>
+            <li>docker-compose.yml explained</li>
+            <li>Common errors and fixes</li>
+        </ul>
+    </li>
+    <li><a href="#kubernetes">Kubernetes</a>
+        <ul>
+            <li>What K8s is and why it exists</li>
+            <li>Cluster, Node, Pod explained</li>
+            <li>Deployment YAML explained</li>
+            <li>Service YAML explained</li>
+            <li>ClusterIP vs NodePort vs LoadBalancer</li>
+            <li>kubectl commands</li>
+            <li>Port forwarding for local testing</li>
+        </ul>
+    </li>
+    <li><a href="#flow">Full System Flow</a></li>
+    <li><a href="#errors">Common Errors and Fixes</a></li>
+</ol>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== REDIS ==================== -->
+<h2 id="redis">1. Redis Caching</h2>
+
+<h3>What is Redis</h3>
+<p>Redis is an <strong>in-memory key-value store</strong>. Think of it as a <code>HashMap</code> that lives outside your application as a separate server, survives app restarts, and is shared across all instances of your service.</p>
+
+<table>
+    <tr><th>HashMap (in your app)</th><th>Redis</th></tr>
+    <tr><td>Lives inside JVM memory</td><td>Lives in a separate server/container</td></tr>
+    <tr><td>Lost when app restarts</td><td>Persists across app restarts</td></tr>
+    <tr><td>Only one app instance can use it</td><td>All instances share the same cache</td></tr>
+    <tr><td>No expiry on entries</td><td>Entries can have TTL (time to live)</td></tr>
+</table>
+
+<h3>Why Redis in the banking system</h3>
+<p>Every time account-service calls <code>GET /api/users/{id}</code> via Feign, user-service hits the database.
+If 100 accounts are created for user ID 1, that's 100 identical DB queries returning the same data.</p>
+
+<pre>
+Without Redis:
+  Call 1 → user-service → DB query → return user
+  Call 2 → user-service → DB query → return user  (same result, wasted query)
+  Call 3 → user-service → DB query → return user  (same result, wasted query)
+
+With Redis:
+  Call 1 → user-service → DB query → store in Redis → return user
+  Call 2 → user-service → Redis hit → return user   (no DB query)
+  Call 3 → user-service → Redis hit → return user   (no DB query)
+</pre>
+
+<div class="important">
+<strong>Redis key format:</strong> Spring stores the cached value under key <code>users::1</code>
+(cacheName::methodParam). So <code>getUser(1)</code> is cached under <code>users::1</code>,
+<code>getUser(2)</code> under <code>users::2</code>, etc.
+</div>
+
+<h3>How @Cacheable works step by step</h3>
+<pre>
+First call — getUser(1):
+  1. Spring checks Redis: does key "users::1" exist? → No
+  2. Executes the method → hits DB → gets Users object
+  3. Stores result in Redis under key "users::1"
+  4. Returns the result
+
+Second call — getUser(1):
+  1. Spring checks Redis: does key "users::1" exist? → Yes
+  2. Returns value from Redis directly
+  3. Method body (DB query) is NEVER executed
+</pre>
+
+<h3>Changes made to user-service</h3>
+
+<h4>1. pom.xml — added dependency</h4>
+<pre>
+&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-data-redis&lt;/artifactId&gt;
+&lt;/dependency&gt;
+</pre>
+<p>Brings in the Lettuce Redis client and Spring Cache Redis integration.</p>
+
+<h4>2. application.yml — Redis connection config</h4>
+<pre>
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+</pre>
+<p>Tells Spring where Redis is running. In Docker/K8s this becomes <code>host: redis</code> (service name).</p>
+
+<h4>3. UserServiceApplication.java — enable caching</h4>
+<pre>
+@SpringBootApplication
+@EnableJpaAuditing
+@EnableCaching    ← without this, @Cacheable is silently ignored
+public class UserServiceApplication { ... }
+</pre>
+
+<h4>4. UserServiceImpl.java — cache the method</h4>
+<pre>
+@Cacheable(value = "users", key = "#id")
+public Users getUser(Integer id) {
+    System.out.println("Fetching user from DB for id: " + id);
+    return userRepo.findById(id)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+}
+</pre>
+<ul>
+    <li><code>value = "users"</code> — the cache name (prefix of the Redis key)</li>
+    <li><code>key = "#id"</code> — the method parameter used as the cache key</li>
+    <li><code>System.out.println</code> — added to visually confirm when DB is hit vs Redis</li>
+</ul>
+
+<h4>5. Users.java — implements Serializable</h4>
+<pre>
+public class Users implements Serializable { ... }
+</pre>
+<p>Redis serializes the Java object to bytes to store it. Without <code>Serializable</code>,
+it throws <code>SerializationException</code> at runtime.</p>
+
+<div class="page-break"></div>
+
+<!-- ==================== KAFKA ==================== -->
+<h2 id="kafka">2. Kafka Deep Dive</h2>
+
+<h3>What Kafka is and why it exists</h3>
+<p>Kafka is a <strong>distributed event streaming platform</strong>. In simple terms: a messaging system
+where one service publishes a message and other services consume it asynchronously.</p>
+
+<p><strong>The problem it solves:</strong> Without Kafka, when account-service creates an account,
+it would need to directly call every other service that cares about this event
+(notification-service, audit-service, analytics-service). This creates tight coupling.</p>
+
+<pre>
+Without Kafka (tight coupling):
+  account-service → calls → notification-service
+  account-service → calls → audit-service
+  account-service → calls → analytics-service
+  (if any of these are down, account creation fails or gets complicated)
+
+With Kafka (loose coupling):
+  account-service → publishes to Kafka topic "account-created"
+  notification-service → listens to "account-created" independently
+  audit-service        → listens to "account-created" independently
+  analytics-service    → listens to "account-created" independently
+  (account-service doesn't know or care who is listening)
+</pre>
+
+<h3>Core Concepts</h3>
+
+<h4>Topic</h4>
+<p>A named channel in Kafka. Like a mailbox with a specific name. Example: <code>account-created</code>.
+Producers send to a topic. Consumers read from a topic. Kafka auto-creates topics on first use.</p>
+
+<h4>Producer</h4>
+<p>The service that sends messages to a topic. In our system: account-service is the producer.
+Uses <code>KafkaTemplate.send(topic, message)</code>.</p>
+
+<h4>Consumer</h4>
+<p>The service that reads messages from a topic. In our system: user-service is the consumer.
+Uses <code>@KafkaListener</code> annotation. Runs in a background thread automatically.</p>
+
+<h4>Consumer Group</h4>
+<p>A named group of consumers. Kafka tracks which messages each group has read (called offset).
+If user-service restarts, it resumes from where it left off — it won't miss or re-process messages.</p>
+
+<h4>Offset</h4>
+<p>A number that tracks which message a consumer has read up to. Think of it like a bookmark in a book.
+<code>auto-offset-reset: earliest</code> means: if this is a new consumer with no bookmark, start from the beginning of the topic.</p>
+
+<h3>Feign vs Kafka — when to use which</h3>
+<table>
+    <tr><th></th><th>Feign (synchronous)</th><th>Kafka (asynchronous)</th></tr>
+    <tr><td>When to use</td><td>When you need the response to continue (verify user exists before creating account)</td><td>When you just need to notify and move on (account created, send email)</td></tr>
+    <tr><td>Caller waits?</td><td>Yes — waits for response</td><td>No — fire and forget</td></tr>
+    <tr><td>Consumer down?</td><td>Request fails immediately</td><td>Message stored in Kafka until consumer recovers</td></tr>
+    <tr><td>Use case in banking</td><td>Validate user before creating account</td><td>Notify other services after account is created</td></tr>
+</table>
+
+<h3>AccountEventProducer.java explained</h3>
+<pre>
+@Component
+public class AccountEventProducer {
+
+    @Autowired
+    private KafkaTemplate&lt;String, String&gt; kafkaTemplate;
+
+    public void publishAccountCreated(String message) {
+        kafkaTemplate.send("account-created", message);
+    }
+}
+</pre>
+<ul>
+    <li><code>KafkaTemplate&lt;String, String&gt;</code> — generic types are &lt;key type, value type&gt;.
+    We use String for both. Key is used for partitioning (advanced topic).</li>
+    <li><code>kafkaTemplate.send(topic, message)</code> — sends the message asynchronously.
+    Returns immediately — does not wait for any consumer to receive it.</li>
+    <li>Called in <code>AccountServiceImpl</code> after <code>accountRepo.save()</code></li>
+</ul>
+
+<h3>AccountEventConsumer.java explained</h3>
+<pre>
+@Component
+public class AccountEventConsumer {
+
+    @KafkaListener(topics = "account-created", groupId = "user-service-group")
+    public void handleAccountCreated(String message) {
+        System.out.println("Account created event received: " + message);
+    }
+}
+</pre>
+<ul>
+    <li><code>@KafkaListener</code> — Spring creates a background thread that polls Kafka continuously.
+    When a message arrives on <code>account-created</code>, this method is called automatically.</li>
+    <li><code>groupId = "user-service-group"</code> — must match the <code>group-id</code> in application.yml.
+    Kafka uses this to track the consumer's offset.</li>
+    <li>Currently just logs to console. In production: send email, write audit log, update analytics.</li>
+</ul>
+
+<h3>Kafka Docker setup — two listeners explained</h3>
+<p>In docker-compose, Kafka needed two listeners:</p>
+<pre>
+KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093
+KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9093
+</pre>
+<ul>
+    <li><strong>INTERNAL (9092)</strong> — for communication between containers inside Docker network.
+    Spring Boot services use <code>kafka:9092</code>.</li>
+    <li><strong>EXTERNAL (9093)</strong> — for access from your host machine (Postman, IntelliJ).
+    Uses <code>localhost:9093</code>.</li>
+</ul>
+<p>In Kubernetes, only one listener is needed (<code>PLAINTEXT://kafka:9092</code>) because
+everything runs inside the cluster — no external access needed.</p>
+
+<div class="page-break"></div>
+
+<!-- ==================== DOCKER ==================== -->
+<h2 id="docker">3. Docker</h2>
+
+<h3>Image vs Container</h3>
+<table>
+    <tr><th>Java analogy</th><th>Docker equivalent</th><th>Description</th></tr>
+    <tr><td>.class file</td><td>Image</td><td>Compiled blueprint — sits on disk, not running</td></tr>
+    <tr><td>Running JVM process</td><td>Container</td><td>A live running instance of the image</td></tr>
+    <tr><td>Source code</td><td>Dockerfile</td><td>Instructions to build the image</td></tr>
+</table>
+
+<p>One image can run as many containers as you want. Same way one <code>.class</code> file can be run as many JVM processes.</p>
+
+<p><strong>For MySQL, Kafka, Redis</strong> — you pulled pre-built images from Docker Hub (like Maven Central for Docker images). You didn't write a Dockerfile for these.</p>
+
+<p><strong>For your Spring Boot services</strong> — nobody on Docker Hub has your code, so you write a Dockerfile and build the image yourself.</p>
+
+<h3>Dockerfile explained line by line</h3>
+<pre>
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY target/user-service-0.0.1-SNAPSHOT.jar app.jar
+ENTRYPOINT ["java", "-jar", "app.jar"]
+</pre>
+
+<table>
+    <tr><th>Line</th><th>What it does</th><th>Why</th></tr>
+    <tr><td><code>FROM eclipse-temurin:21-jre</code></td><td>Start from a base image that has JRE 21</td><td>You need JRE to run a JAR. JDK is for compiling — Maven already did that.</td></tr>
+    <tr><td><code>WORKDIR /app</code></td><td>Create and switch to /app directory inside container</td><td>Organizes files. All following commands run from here.</td></tr>
+    <tr><td><code>COPY target/...jar app.jar</code></td><td>Copy your built JAR into the container</td><td>Without this, the container has no idea your code exists.</td></tr>
+    <tr><td><code>ENTRYPOINT ["java","-jar","app.jar"]</code></td><td>Command that runs when container starts</td><td>Exactly what IntelliJ does when you click Run.</td></tr>
+</table>
+
+<div class="note">
+<strong>Build order:</strong> Always run <code>mvn clean package -DskipTests</code> before <code>docker build</code>.
+Docker copies the JAR from <code>target/</code> — if you skip Maven, the JAR is stale or missing.
+</div>
+
+<h3>docker-compose.yml explained</h3>
+<p>docker-compose lets you define and run multiple containers with one command: <code>docker-compose up -d</code></p>
+
+<h4>Key concepts in docker-compose:</h4>
+<table>
+    <tr><th>Field</th><th>Purpose</th><th>Example</th></tr>
+    <tr><td><code>image</code></td><td>Which Docker image to use</td><td><code>mysql:8.0</code></td></tr>
+    <tr><td><code>container_name</code></td><td>Friendly name for the container</td><td><code>banking-mysql</code></td></tr>
+    <tr><td><code>ports</code></td><td>Map host port to container port</td><td><code>3306:3306</code> (host:container)</td></tr>
+    <tr><td><code>environment</code></td><td>Set environment variables inside container</td><td><code>MYSQL_ROOT_PASSWORD: password</code></td></tr>
+    <tr><td><code>depends_on</code></td><td>Start this container after listed ones</td><td><code>depends_on: - mysql</code></td></tr>
+</table>
+
+<h4>Why localhost doesn't work inside Docker</h4>
+<p>Inside a container, <code>localhost</code> means the container itself — not your machine.
+Containers talk to each other using the <strong>service name</strong> defined in docker-compose.</p>
+<pre>
+Wrong:  SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/...
+Right:  SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/...
+                                                ↑
+                                    service name from docker-compose
+</pre>
+
+<h4>Spring Boot environment variable override</h4>
+<p>Spring Boot automatically maps environment variables to properties:</p>
+<pre>
+Environment variable:  SPRING_DATASOURCE_URL
+Maps to property:      spring.datasource.url
+
+Environment variable:  USER_SERVICE_URL
+Maps to property:      user.service.url
+</pre>
+<p>Rule: Replace <code>_</code> with <code>.</code> and lowercase. This is how docker-compose env vars
+override <code>application.yml</code> values without changing the JAR.</p>
+
+<h4>imagePullPolicy and allowPublicKeyRetrieval</h4>
+<ul>
+    <li><code>imagePullPolicy: Never</code> — use local image, don't try Docker Hub. Required for locally built images.</li>
+    <li><code>allowPublicKeyRetrieval=true</code> in MySQL URL — MySQL 8 uses stronger authentication
+    (caching_sha2_password). On first connection without SSL, client needs server's RSA public key.
+    This flag allows it. Fine for development, use SSL in production.</li>
+</ul>
+
+<h3>Useful Docker commands</h3>
+<table>
+    <tr><th>Command</th><th>What it does</th></tr>
+    <tr><td><code>docker build -t name:tag .</code></td><td>Build image from Dockerfile in current directory</td></tr>
+    <tr><td><code>docker-compose up -d</code></td><td>Start all services in background</td></tr>
+    <tr><td><code>docker-compose down</code></td><td>Stop and remove all containers</td></tr>
+    <tr><td><code>docker logs container-name</code></td><td>View logs of a container</td></tr>
+    <tr><td><code>docker exec -it container-name bash</code></td><td>Open shell inside a running container</td></tr>
+    <tr><td><code>docker ps</code></td><td>List running containers</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== KUBERNETES ==================== -->
+<h2 id="kubernetes">4. Kubernetes</h2>
+
+<h3>What K8s is and why it exists</h3>
+<p>Kubernetes is a <strong>container orchestration platform</strong>. Docker runs containers.
+Kubernetes manages containers at scale — restarting crashed containers, scaling up/down,
+load balancing across multiple instances, rolling updates without downtime.</p>
+
+<table>
+    <tr><th>Problem</th><th>Docker alone</th><th>Kubernetes</th></tr>
+    <tr><td>Container crashes</td><td>Stays down until you manually restart</td><td>Automatically restarts</td></tr>
+    <tr><td>High traffic</td><td>Manually run more containers</td><td>Auto-scales pods</td></tr>
+    <tr><td>Deploy new version</td><td>Downtime during restart</td><td>Rolling update — zero downtime</td></tr>
+    <tr><td>Multiple machines</td><td>Manage each manually</td><td>K8s manages the whole cluster</td></tr>
+</table>
+
+<h3>Cluster, Node, Pod</h3>
+<pre>
+Kubernetes Cluster
+│
+├── Node (a machine — physical or VM)
+│   ├── Pod → wraps one container (e.g. user-service)
+│   ├── Pod → wraps one container (e.g. account-service)
+│   ├── Pod → wraps one container (e.g. mysql)
+│
+└── Node 2 (in production you have multiple nodes)
+    ├── Pod
+    ├── Pod
+</pre>
+
+<table>
+    <tr><th>K8s concept</th><th>Docker equivalent</th><th>Description</th></tr>
+    <tr><td>Pod</td><td>Running container</td><td>Smallest deployable unit. Wraps one container.</td></tr>
+    <tr><td>Deployment</td><td>docker-compose service</td><td>Manages pods — ensures desired number always running</td></tr>
+    <tr><td>Service</td><td>Container name + port mapping</td><td>Stable DNS name to reach a set of pods</td></tr>
+    <tr><td>kubectl</td><td>docker CLI</td><td>Command-line tool to interact with K8s cluster</td></tr>
+</table>
+
+<div class="note">
+<strong>Why you don't manage Pods directly:</strong> Pods get random names and IPs that change on every restart.
+You manage Deployments — K8s manages the pods for you.
+</div>
+
+<h3>Deployment YAML explained</h3>
+<pre>
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service          ← name of this Deployment
+spec:
+  replicas: 1                 ← how many pods to run (change to 3 for 3 instances)
+  selector:
+    matchLabels:
+      app: user-service       ← Deployment manages pods with this label
+  template:
+    metadata:
+      labels:
+        app: user-service     ← label applied to each pod created
+    spec:
+      containers:
+        - name: user-service
+          image: user-service:latest
+          imagePullPolicy: Never   ← use local image, don't pull from Docker Hub
+          ports:
+            - containerPort: 8081
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://mysql:3306/..."
+</pre>
+
+<h4>Why selector and labels must match</h4>
+<p>The Deployment uses <code>selector.matchLabels</code> to find which pods it owns.
+The <code>template.labels</code> are the labels applied to pods created by this Deployment.
+They must match — otherwise the Deployment can't manage its own pods.</p>
+
+<h3>Service YAML explained</h3>
+<pre>
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service          ← DNS name other pods use to reach this service
+spec:
+  selector:
+    app: user-service         ← routes traffic to pods with this label
+  ports:
+    - port: 8081              ← port other pods call
+      targetPort: 8081        ← port the pod is actually listening on
+  type: ClusterIP             ← only reachable inside the cluster
+</pre>
+
+<h4>How service discovery works in K8s</h4>
+<p>When account-service calls <code>http://user-service:8081</code>, K8s DNS resolves
+<code>user-service</code> to the ClusterIP of the Service, which routes to the correct pod.
+Same concept as Docker Compose service names, but managed by K8s.</p>
+
+<h3>ClusterIP vs NodePort vs LoadBalancer</h3>
+<table>
+    <tr><th>Type</th><th>Who can reach it</th><th>When to use</th></tr>
+    <tr><td>ClusterIP</td><td>Only pods inside the cluster</td><td>Service-to-service communication (user-service → mysql)</td></tr>
+    <tr><td>NodePort</td><td>External traffic via a port on the node</td><td>Development/testing without a load balancer</td></tr>
+    <tr><td>LoadBalancer</td><td>External traffic via cloud load balancer</td><td>Production on AWS/GCP/Azure</td></tr>
+</table>
+
+<h3>kubectl commands</h3>
+<table>
+    <tr><th>Command</th><th>What it does</th></tr>
+    <tr><td><code>kubectl apply -f k8s/</code></td><td>Apply all YAML files in the k8s/ folder</td></tr>
+    <tr><td><code>kubectl get pods</code></td><td>List all pods and their status</td></tr>
+    <tr><td><code>kubectl get services</code></td><td>List all services</td></tr>
+    <tr><td><code>kubectl logs deployment/user-service</code></td><td>View logs of user-service pod</td></tr>
+    <tr><td><code>kubectl logs -f deployment/user-service</code></td><td>Follow/stream logs in real time</td></tr>
+    <tr><td><code>kubectl describe pod pod-name</code></td><td>Detailed info about a pod (good for debugging)</td></tr>
+    <tr><td><code>kubectl delete -f k8s/</code></td><td>Delete all resources defined in k8s/ folder</td></tr>
+    <tr><td><code>kubectl get nodes</code></td><td>List nodes in the cluster</td></tr>
+</table>
+
+<h3>Port forwarding for local testing</h3>
+<p>Services of type <code>ClusterIP</code> are not accessible from outside the cluster.
+<code>kubectl port-forward</code> creates a tunnel from your machine to a pod inside K8s.</p>
+<pre>
+kubectl port-forward service/user-service 8081:8081
+                              ↑                ↑   ↑
+                         service name     local  pod
+                                          port   port
+
+Result: localhost:8081 → K8s pod running user-service
+</pre>
+<p>Every <code>Handling connection for 8081</code> line you see in the terminal = one request
+that went through K8s. This is proof K8s is handling it, not Docker.</p>
+
+<h3>K8s files structure in banking system</h3>
+<pre>
+banking-system/k8s/
+├── user-service-deployment.yaml
+├── user-service-service.yaml
+├── account-service-deployment.yaml
+├── account-service-service.yaml
+├── mysql-deployment.yaml
+├── mysql-service.yaml
+├── redis-deployment.yaml
+├── redis-service.yaml
+├── kafka-deployment.yaml
+├── kafka-service.yaml
+├── zookeeper-deployment.yaml
+└── zookeeper-service.yaml
+</pre>
+
+<div class="page-break"></div>
+
+<!-- ==================== FULL FLOW ==================== -->
+<h2 id="flow">5. Full System Flow (Everything Together)</h2>
+
+<pre>
+Postman/Frontend
+      |
+      | POST /api/accounts (with JWT token)
+      ▼
+kubectl port-forward → account-service pod (K8s)
+      |
+      | 1. JwtFilter validates token
+      | 2. FeignClientConfig intercepts outgoing call, attaches JWT
+      |
+      | Feign call: GET http://user-service:8081/api/users/{id}
+      ▼
+user-service pod (K8s)
+      |
+      | 3. Check Redis cache (users::1)
+      |    → Cache HIT: return from Redis (no DB)
+      |    → Cache MISS: query MySQL pod, store in Redis, return
+      ▼
+MySQL pod (K8s)
+      |
+      | (only on cache miss)
+      ▼
+Back to account-service pod
+      |
+      | 4. Save account to MySQL pod
+      | 5. KafkaTemplate.send("account-created", message)
+      ▼
+Kafka pod (K8s)
+      |
+      | 6. Delivers message to consumer
+      ▼
+user-service pod — AccountEventConsumer
+      |
+      | 7. @KafkaListener receives message
+      | 8. Logs: "Account created event received: userId=X, account=XXXXX"
+      |    (future: send email, write audit log)
+</pre>
+
+<div class="page-break"></div>
+
+<!-- ==================== ERRORS ==================== -->
+<h2 id="errors">6. Common Errors and Fixes (Phase 2)</h2>
+
+<table>
+    <tr><th>Error</th><th>Cause</th><th>Fix</th></tr>
+    <tr><td>RedisConnectionFailureException</td><td>Redis container was stopped</td><td>Start the Redis container in Docker Desktop</td></tr>
+    <tr><td>SerializationException on cache</td><td>Entity class doesn't implement Serializable</td><td>Add <code>implements Serializable</code> to Users.java</td></tr>
+    <tr><td>@Cacheable not working (silently)</td><td>@EnableCaching missing on main class</td><td>Add @EnableCaching to UserServiceApplication</td></tr>
+    <tr><td>Ports are not available: 3306</td><td>Local MySQL running on same port as Docker MySQL</td><td>Stop local MySQL service via services.msc</td></tr>
+    <tr><td>Ports are not available: 8081</td><td>Spring Boot still running in IntelliJ</td><td>Stop the app in IntelliJ Run panel</td></tr>
+    <tr><td>Public Key Retrieval is not allowed</td><td>MySQL 8 caching_sha2_password auth requires RSA key exchange</td><td>Add <code>allowPublicKeyRetrieval=true</code> to JDBC URL</td></tr>
+    <tr><td>Connection refused: localhost:8081 (Feign in Docker)</td><td>localhost inside container = the container itself</td><td>Make Feign URL configurable via property, pass <code>http://user-service:8081</code> as env var</td></tr>
+    <tr><td>invalid tag "user:service:latest"</td><td>Docker image name can't contain colons</td><td>Use hyphen: <code>user-service:latest</code></td></tr>
+    <tr><td>unknown instruction: ENTRYPOINT["java"...]</td><td>Missing space between ENTRYPOINT and brackets</td><td><code>ENTRYPOINT ["java", "-jar", "app.jar"]</code></td></tr>
+    <tr><td>K8s pod CrashLoopBackOff</td><td>Container crashes on startup (check logs)</td><td>Run <code>kubectl logs deployment/service-name</code> to find root cause</td></tr>
+    <tr><td>YAML: unknown instruction / parse error</td><td>Wrong indentation or case (YAML is case-sensitive)</td><td><code>selector</code> not <code>Selector</code>, <code>spec</code> must be inside <code>template</code></td></tr>
+    <tr><td>Spring Cloud incompatible with Spring Boot</td><td>Version mismatch — Spring Cloud 2025.0.0 needs Boot 3.5.x</td><td>account-service uses Boot 3.5.13, user-service uses 3.3.5</td></tr>
+</table>
+
+<br/><br/>
+<hr/>
+<p style="color:#888; font-size:10pt; text-align:center;">
+    Banking System Learning Document 2 &mdash; Phase 2 Complete<br/>
+    Next: Multithreading &rarr; AWS &rarr; React Frontend
+</p>
+
+</body>
+</html>

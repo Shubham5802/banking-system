@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(jar xf:*)",
+      "Bash(javap -p \"org/springframework/cloud/gateway/server/mvc/handler/HandlerFunctions.class\")"
+    ]
+  }
+}

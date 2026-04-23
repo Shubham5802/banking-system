@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Banking System - Learning Document 3</title>
+    <style>
+        body {
+            font-family: Calibri, Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            margin: 60px;
+            color: #1a1a1a;
+        }
+        h1 {
+            font-size: 26pt;
+            color: #1a3c6e;
+            border-bottom: 3px solid #1a3c6e;
+            padding-bottom: 8px;
+        }
+        h2 {
+            font-size: 18pt;
+            color: #1a3c6e;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 4px;
+            margin-top: 36px;
+        }
+        h3 {
+            font-size: 14pt;
+            color: #2e6da4;
+            margin-top: 24px;
+        }
+        h4 {
+            font-size: 12pt;
+            color: #444;
+            margin-top: 16px;
+            margin-bottom: 4px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            border-left: 4px solid #2e6da4;
+            padding: 12px 16px;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        code {
+            background-color: #f0f0f0;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+        th {
+            background-color: #1a3c6e;
+            color: white;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        td {
+            border: 1px solid #ccc;
+            padding: 8px 12px;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .note {
+            background-color: #fff8dc;
+            border-left: 4px solid #f0c040;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        .important {
+            background-color: #e8f0fe;
+            border-left: 4px solid #2e6da4;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        .warning {
+            background-color: #fdecea;
+            border-left: 4px solid #c0392b;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        ul {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+        li {
+            margin-bottom: 4px;
+        }
+        .toc a {
+            color: #2e6da4;
+            text-decoration: none;
+        }
+        .subtitle {
+            color: #555;
+            font-size: 13pt;
+            margin-top: -10px;
+            margin-bottom: 30px;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Banking System &mdash; Learning Document 3</h1>
+<p class="subtitle">transaction-service | Multithreading (@Async) | Saga Pattern<br/>
+Written for: Shubham (6 years Java &mdash; JDBC, JSP, Spring MVC)<br/>
+Date: April 2026 &mdash; Continues from Document 2 (Redis, Docker, Kubernetes)</p>
+
+<hr/>
+
+<h2>What was built since Document 2</h2>
+<p>Document 2 ended after Kubernetes. Since then, three new things were added to the system:</p>
+<ol>
+    <li><strong>New APIs in account-service</strong> &mdash; dashboard, get single account, update balance</li>
+    <li><strong>Multithreading / @Async</strong> &mdash; Kafka publish now runs on a separate thread pool</li>
+    <li><strong>transaction-service</strong> &mdash; a brand new third microservice (port 8083)</li>
+    <li><strong>Saga Pattern</strong> &mdash; distributed money transfer with automatic compensation/rollback</li>
+</ol>
+
+<hr/>
+
+<h2>Table of Contents</h2>
+<div class="toc">
+<ol>
+    <li><a href="#new-apis">New account-service APIs</a>
+        <ul>
+            <li>DashboardResponse DTO</li>
+            <li>getAccounts (dashboard)</li>
+            <li>getAccount (single account)</li>
+            <li>updateAccount (balance)</li>
+        </ul>
+    </li>
+    <li><a href="#async">Multithreading &mdash; @Async in Spring Boot</a>
+        <ul>
+            <li>The problem with blocking Kafka publish</li>
+            <li>AsyncConfig.java explained</li>
+            <li>@Async on AccountEventProducer</li>
+            <li>ThreadPoolTaskExecutor parameters</li>
+        </ul>
+    </li>
+    <li><a href="#transaction-service">transaction-service</a>
+        <ul>
+            <li>What it does and why a new service</li>
+            <li>Transaction entity</li>
+            <li>TransferRequest DTO</li>
+            <li>TransactionResponse DTO</li>
+            <li>AccountClient (Feign)</li>
+            <li>TransactionController</li>
+            <li>TransactionServiceImpl</li>
+        </ul>
+    </li>
+    <li><a href="#saga">Saga Pattern</a>
+        <ul>
+            <li>The problem with distributed transactions</li>
+            <li>What Saga is</li>
+            <li>Choreography vs Orchestration</li>
+            <li>All Kafka topics in the system</li>
+            <li>Happy path step by step</li>
+            <li>Failure path step by step (compensation)</li>
+            <li>TransactionEventProducer.java</li>
+            <li>TransactionEventConsumer.java</li>
+            <li>SagaEventConsumer.java (account-service)</li>
+            <li>AccountEventProducer.publishEvent()</li>
+        </ul>
+    </li>
+    <li><a href="#flow">Full Updated System Flow</a></li>
+    <li><a href="#errors">Common Errors and Fixes (Phase 3)</a></li>
+</ol>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== NEW APIS ==================== -->
+<h2 id="new-apis">1. New account-service APIs</h2>
+
+<p>Before transaction-service was built, account-service needed a few more capabilities.
+These three APIs were added to <code>AccountController</code> and <code>AccountServiceImpl</code>.</p>
+
+<h3>New endpoints at a glance</h3>
+<table>
+    <tr><th>Method</th><th>URL</th><th>Purpose</th></tr>
+    <tr><td>GET</td><td>/api/accounts/dashboard/{userId}</td><td>Returns user info + all their accounts + total balance</td></tr>
+    <tr><td>GET</td><td>/api/accounts/account/{accountNumber}</td><td>Returns one account by account number (used by transaction-service via Feign)</td></tr>
+    <tr><td>PUT</td><td>/api/accounts/account/{accountNumber}/update-balance</td><td>Updates account type and balance (used by Saga internally)</td></tr>
+</table>
+
+<h3>DashboardResponse.java</h3>
+<pre>
+@Data
+public class DashboardResponse {
+    private String userName;
+    private String email;
+    private List&lt;Account&gt; accounts;
+    private Double totalBalanace;   // intentional typo — kept as-is in code
+}
+</pre>
+<p>This DTO bundles three things that come from two different sources:</p>
+<ul>
+    <li><code>userName</code> and <code>email</code> — fetched from user-service via Feign (<code>UserDto</code>)</li>
+    <li><code>accounts</code> and <code>totalBalanace</code> — fetched from account-service's own DB</li>
+</ul>
+<p>This is a common microservices pattern: <strong>API composition</strong> &mdash; one service aggregates data
+from multiple sources and returns a unified response.</p>
+
+<h3>getAccounts (dashboard) in AccountServiceImpl</h3>
+<pre>
+public DashboardResponse getAccounts(Integer userId) {
+    UserDto user = userClient.getUserById(userId);          // Feign call to user-service
+    List&lt;Account&gt; accounts = accountRepo.findByUserId(userId);
+
+    if (accounts.isEmpty()) {
+        throw new ResourceNotFoundException("No accounts for: " + userId);
+    }
+
+    DashboardResponse response = new DashboardResponse();
+    response.setUserName(user.getName());
+    response.setEmail(user.getMail());
+    response.setAccounts(accounts);
+
+    BigDecimal sum = BigDecimal.valueOf(0);
+    for (Account acc : accounts) {
+        sum = sum.add(acc.getBalance());
+    }
+    response.setTotalBalanace(sum.doubleValue());
+    return response;
+}
+</pre>
+<div class="note">
+<strong>Why BigDecimal for money?</strong> <code>double</code> has floating-point precision issues.
+For example: <code>0.1 + 0.2</code> in double gives <code>0.30000000000000004</code>.
+For money calculations, always use <code>BigDecimal</code>.
+The final <code>totalBalanace</code> field is stored as <code>Double</code> in the DTO (for JSON simplicity),
+but the accumulation uses <code>BigDecimal</code> to keep it accurate.
+</div>
+
+<h3>getAccount (single account)</h3>
+<pre>
+// AccountServiceImpl
+public Account getAccount(String accountNumber) {
+    return accountRepo.findByAccountNumber(accountNumber);
+}
+
+// AccountController
+@GetMapping("/account/{accountNumber}")
+public ResponseEntity&lt;Account&gt; getAccount(@PathVariable String accountNumber) {
+    Account account = accountService.getAccount(accountNumber);
+    return ResponseEntity.ok().body(account);
+}
+</pre>
+<p>This API was specifically added so that <strong>transaction-service can call account-service via Feign</strong>
+to validate both accounts before starting a transfer.</p>
+
+<div class="page-break"></div>
+
+<!-- ==================== ASYNC ==================== -->
+<h2 id="async">2. Multithreading &mdash; @Async in Spring Boot</h2>
+
+<h3>The problem: why we needed @Async</h3>
+<p>When <code>createAccount()</code> calls <code>accountEventProducer.publishAccountCreated()</code>,
+the Kafka publish happens <strong>on the same thread</strong> that is handling the HTTP request.
+The client (Postman/frontend) is waiting while Kafka does its work.</p>
+
+<pre>
+Without @Async:
+  HTTP request thread ──────────────────────────────────────────▶ response
+                        │ create account │ kafka publish │
+                                           ↑
+                                    client waits here too
+                                    (wasted — client doesn't need to)
+
+With @Async:
+  HTTP request thread ──────────────────────────────▶ response
+                        │ create account │ return
+                                          ↑
+                        ── banking-async thread: kafka publish
+                           (runs in background, client already got response)
+</pre>
+
+<p>The HTTP response returns as soon as the account is saved. The Kafka publish runs
+on a separate thread from your thread pool — the client doesn't wait for it.</p>
+
+<h3>AsyncConfig.java explained</h3>
+<pre>
+@Configuration
+@EnableAsync                    ← tells Spring: this app uses @Async
+public class AsyncConfig {
+
+    @Bean(name = "taskExecuter")   ← gives this thread pool a name
+    public Executor taskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(5);       ← always keep 5 threads alive
+        executor.setMaxPoolSize(10);       ← can grow up to 10 under load
+        executor.setQueueCapacity(100);   ← queue up to 100 tasks before rejecting
+        executor.setThreadNamePrefix("banking-async");  ← thread names in logs
+        executor.initialize();
+        return executor;
+    }
+}
+</pre>
+
+<h4>ThreadPoolTaskExecutor parameters explained</h4>
+<table>
+    <tr><th>Parameter</th><th>What it means</th><th>Analogy</th></tr>
+    <tr><td>corePoolSize = 5</td><td>5 threads always alive, even if idle</td><td>5 permanent staff in the office</td></tr>
+    <tr><td>maxPoolSize = 10</td><td>Can spin up 5 extra threads under heavy load</td><td>5 extra contract staff hired during peak</td></tr>
+    <tr><td>queueCapacity = 100</td><td>If all 10 threads busy, queue 100 more tasks</td><td>Waiting room holds 100 people</td></tr>
+    <tr><td>threadNamePrefix</td><td>All threads get this prefix in their name</td><td>Makes log output readable — you can see "banking-async-1" vs "http-nio-8082-1"</td></tr>
+</table>
+
+<div class="important">
+<strong>@EnableAsync must be on a @Configuration class.</strong>
+Without <code>@EnableAsync</code>, the <code>@Async</code> annotation is silently ignored
+and the method runs synchronously — same thread, no background execution.
+This is exactly like <code>@EnableCaching</code> being required for <code>@Cacheable</code>.
+</div>
+
+<h3>@Async on AccountEventProducer</h3>
+<pre>
+@Component
+public class AccountEventProducer {
+
+    @Async("taskExecuter")             ← run this method on the named thread pool
+    public void publishAccountCreated(String message) {
+        System.out.println("publishing on thread: " + Thread.currentThread().getName());
+        kafkaTemplate.send("account-created", message);
+    }
+
+    // publishEvent() is NOT @Async — used in Saga, needs to be synchronous
+    public void publishEvent(String topic, String message) {
+        kafkaTemplate.send(topic, message);
+    }
+}
+</pre>
+
+<ul>
+    <li><code>@Async("taskExecuter")</code> — the string matches the <code>@Bean(name = "taskExecuter")</code> in AsyncConfig</li>
+    <li>When called, Spring returns immediately and runs the method body on a background thread</li>
+    <li>The <code>System.out.println</code> will show <code>banking-async-1</code> (or similar) in logs,
+    confirming it ran on the thread pool, not the HTTP thread</li>
+    <li><code>publishEvent()</code> is left synchronous intentionally &mdash; the Saga needs to wait
+    for debit-success / debit-failed before proceeding</li>
+</ul>
+
+<div class="note">
+<strong>@Async only works when called from OUTSIDE the same class.</strong>
+Spring uses a proxy to intercept @Async calls. If method A in AccountEventProducer
+calls @Async method B in the same class, the proxy is bypassed and B runs synchronously.
+This is the same proxy limitation as @Transactional.
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== TRANSACTION SERVICE ==================== -->
+<h2 id="transaction-service">3. transaction-service (new microservice)</h2>
+
+<h3>Why a separate service for transactions?</h3>
+<p>You could add transfer logic to account-service. But microservices design says:
+each service should have one clear responsibility.</p>
+<ul>
+    <li><strong>account-service</strong> — owns accounts: create, read, update balances</li>
+    <li><strong>transaction-service</strong> — owns transfers: initiate, track status, history</li>
+</ul>
+<p>This also means the Transaction table is in transaction-service's database,
+and only transaction-service writes to it. account-service only updates balances.</p>
+
+<h3>transaction-service at a glance</h3>
+<table>
+    <tr><th>Item</th><th>Value</th></tr>
+    <tr><td>Port</td><td>8083</td></tr>
+    <tr><td>Group ID (Kafka consumer)</td><td>transaction-service-group</td></tr>
+    <tr><td>Feign target</td><td>account-service at <code>${account.service.url}</code></td></tr>
+    <tr><td>DB table</td><td>transaction</td></tr>
+</table>
+
+<h3>Transaction.java (entity)</h3>
+<pre>
+@Entity
+@Data
+@EntityListeners(AuditingEntityListener.class)
+public class Transaction {
+    @Id @GeneratedValue
+    private Integer id;
+
+    @NotNull
+    private String fromAccountId;    ← account number of sender
+
+    @NotNull
+    private String toAccountId;      ← account number of receiver
+
+    @NotNull
+    private Double amount;
+
+    @Enumerated(EnumType.STRING)
+    private TransactionTypes type;   ← TRANSFER (enum, stored as string in DB)
+
+    private String status;           ← PENDING → COMPLETED or FAILED
+
+    @CreatedDate
+    private LocalDateTime timestamp = LocalDateTime.now();
+}
+</pre>
+
+<div class="important">
+<strong>Status lifecycle:</strong> A transaction always starts as <code>PENDING</code>.
+It only moves to <code>COMPLETED</code> or <code>FAILED</code> once the Saga finishes.
+The client gets a <code>202 ACCEPTED</code> response when the transfer is initiated,
+not when it is complete &mdash; the actual result comes asynchronously via Kafka.
+</div>
+
+<h3>TransferRequest.java (DTO)</h3>
+<pre>
+@Data
+public class TransferRequest {
+    @NotNull
+    private String fromAccountNumber;
+
+    @NotNull
+    private String toAccountNumber;
+
+    @NotNull @Positive
+    private Double amount;
+}
+</pre>
+
+<h3>TransactionController.java</h3>
+<pre>
+@RestController
+@RequestMapping("/api/transactions")
+public class TransactionController {
+
+    @PostMapping("/transfer")
+    public ResponseEntity&lt;TransactionResponse&gt; transfer(@Valid @RequestBody TransferRequest request) {
+        TransactionResponse response = transactionService.initiateTransfer(request);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);   ← 202, not 201
+    }
+
+    @GetMapping("/history/{accountNumber}")
+    public ResponseEntity&lt;List&lt;TransactionResponse&gt;&gt; history(@PathVariable String accountNumber) {
+        return ResponseEntity.ok(transactionService.getTransactionHistory(accountNumber));
+    }
+
+    @GetMapping("/health")
+    public String health() { return "transaction-service running"; }
+}
+</pre>
+<p><strong>202 ACCEPTED</strong> means: "I received your request and started processing it,
+but I haven't finished yet." This is correct for async Saga flows where the actual
+debit/credit happens in the background via Kafka.</p>
+
+<h3>AccountClient.java (Feign in transaction-service)</h3>
+<pre>
+@FeignClient(name = "account-service", url = "${account.service.url}")
+public interface AccountClient {
+
+    @GetMapping("/api/accounts/account/{accountNumber}")
+    Account getAccount(@PathVariable String accountNumber);
+}
+</pre>
+<p>transaction-service calls account-service synchronously (via Feign) just to validate
+that both accounts exist and that the sender has enough balance. The actual debit/credit
+is done asynchronously via Kafka (Saga).</p>
+
+<h3>TransactionServiceImpl.java — initiateTransfer</h3>
+<pre>
+public TransactionResponse initiateTransfer(TransferRequest request) {
+    // Step 1: Validate both accounts exist via Feign
+    Account fromAccount = accountClient.getAccount(request.getFromAccountNumber());
+    Account toAccount   = accountClient.getAccount(request.getToAccountNumber());
+
+    // Step 2: Check sufficient balance (early guard, before DB write)
+    if (fromAccount.getBalance().doubleValue() &lt; request.getAmount()) {
+        throw new RuntimeException("Insufficient Balance");
+    }
+
+    // Step 3: Save transaction as PENDING in DB
+    Transaction transaction = new Transaction();
+    transaction.setFromAccountId(request.getFromAccountNumber());
+    transaction.setToAccountId(request.getToAccountNumber());
+    transaction.setAmount(request.getAmount());
+    transaction.setType(TransactionTypes.TRANSFER);
+    transaction.setStatus("PENDING");
+    transactionRepo.save(transaction);
+
+    // Step 4: Kick off Saga — publish debit request to Kafka
+    String debitMsg = "transactionId=" + transaction.getId()
+                    + ",fromAccount=" + request.getFromAccountNumber()
+                    + ",amount=" + request.getAmount();
+    producer.publishDebitRequest(debitMsg);
+
+    // Step 5: Return PENDING response immediately (202)
+    return mapToResponse(transaction);
+}
+</pre>
+
+<div class="page-break"></div>
+
+<!-- ==================== SAGA ==================== -->
+<h2 id="saga">4. Saga Pattern</h2>
+
+<h3>The problem: distributed transactions</h3>
+<p>In a monolith, a money transfer is a single DB transaction:</p>
+<pre>
+BEGIN TRANSACTION
+  UPDATE accounts SET balance = balance - 500 WHERE id = 'A'
+  UPDATE accounts SET balance = balance + 500 WHERE id = 'B'
+COMMIT
+</pre>
+<p>If step 2 fails, step 1 is rolled back automatically. No inconsistency.</p>
+
+<p>In microservices, accounts are in account-service's DB.
+There is <strong>no single transaction that spans two services</strong>.</p>
+<pre>
+Problem scenario:
+  1. Debit 500 from account A ← succeeds
+  2. Credit 500 to account B  ← network failure, never happens
+
+Result: 500 vanishes from the system. Money is lost.
+</pre>
+<p>This is the distributed transaction problem. Saga is the standard solution.</p>
+
+<h3>What Saga is</h3>
+<p>A Saga is a <strong>sequence of local transactions</strong>, where each step publishes an event.
+If a step fails, a <strong>compensating transaction</strong> (undo action) is triggered for every
+step that already succeeded.</p>
+
+<pre>
+Happy path:     debit A → credit B → done ✓
+Failure path:   debit A → credit B fails → compensate: refund A ✓
+</pre>
+
+<h3>Choreography vs Orchestration</h3>
+<p>There are two ways to implement a Saga. This project uses <strong>choreography</strong>.</p>
+
+<table>
+    <tr><th></th><th>Choreography (what we built)</th><th>Orchestration (alternative)</th></tr>
+    <tr><td>How it works</td><td>Each service reacts to events and publishes the next event. No central controller.</td><td>A central "orchestrator" service tells each service what to do step by step.</td></tr>
+    <tr><td>Communication</td><td>Services talk only via Kafka events</td><td>Orchestrator calls each service</td></tr>
+    <tr><td>Coupling</td><td>Loose — services only know about topics</td><td>Tighter — orchestrator knows all steps</td></tr>
+    <tr><td>Complexity</td><td>Logic spread across services (harder to trace)</td><td>Logic centralized (easier to trace)</td></tr>
+    <tr><td>Best for</td><td>Simple flows with few steps</td><td>Complex flows with many steps or conditions</td></tr>
+</table>
+
+<h3>All Kafka topics in the system (after Saga)</h3>
+<table>
+    <tr><th>Topic</th><th>Published by</th><th>Consumed by</th><th>Purpose</th></tr>
+    <tr><td>account-created</td><td>account-service</td><td>user-service</td><td>Notify that an account was created (original Kafka from Phase 1)</td></tr>
+    <tr><td>debit-request</td><td>transaction-service</td><td>account-service (SagaEventConsumer)</td><td>Step 1: ask account-service to debit the sender</td></tr>
+    <tr><td>debit-success</td><td>account-service</td><td>transaction-service</td><td>Debit completed — proceed to credit</td></tr>
+    <tr><td>debit-failed</td><td>account-service</td><td>transaction-service</td><td>Debit failed — mark transaction as FAILED, stop</td></tr>
+    <tr><td>credit-request</td><td>transaction-service</td><td>account-service (SagaEventConsumer)</td><td>Step 2: ask account-service to credit the receiver</td></tr>
+    <tr><td>credit-success</td><td>account-service</td><td>(future: mark as COMPLETED)</td><td>Credit completed — transfer done</td></tr>
+    <tr><td>credit-failed</td><td>account-service</td><td>transaction-service</td><td>Credit failed — compensate (refund sender)</td></tr>
+    <tr><td>compensate-debit</td><td>transaction-service</td><td>account-service (SagaEventConsumer)</td><td>Rollback: refund the amount back to sender</td></tr>
+</table>
+
+<h3>Saga Happy Path — step by step</h3>
+<pre>
+Postman: POST /api/transactions/transfer
+  { "fromAccountNumber": "ABC123", "toAccountNumber": "XYZ789", "amount": 500 }
+
+Step 1 — TransactionServiceImpl.initiateTransfer()
+  → Feign: validate both accounts exist (GET /api/accounts/account/ABC123, XYZ789)
+  → Check: ABC123 balance &gt;= 500? YES
+  → Save Transaction(id=42, status=PENDING) to DB
+  → Kafka publish: topic="debit-request"
+      message: "transactionId=42,fromAccount=ABC123,amount=500.0"
+  → Return 202 ACCEPTED with Transaction(id=42, status=PENDING)
+
+Step 2 — SagaEventConsumer.handleDebitRequest() [in account-service]
+  → Parse message: transactionId=42, fromAccount=ABC123, amount=500
+  → Load account ABC123 from DB
+  → balance (1000) &gt;= 500? YES
+  → account.balance = 1000 - 500 = 500
+  → Save account
+  → Kafka publish: topic="debit-success"
+      message: "transactionId=42"
+
+Step 3 — TransactionEventConsumer.handleDebitSuccess() [in transaction-service]
+  → Parse transactionId=42
+  → Load transaction(42) from DB
+  → Get toAccountId = XYZ789, amount = 500
+  → Kafka publish: topic="credit-request"
+      message: "transactionId=42,toAccount=XYZ789,amount=500.0"
+
+Step 4 — SagaEventConsumer.handleCreditRequest() [in account-service]
+  → Parse message: transactionId=42, toAccount=XYZ789, amount=500
+  → Load account XYZ789 from DB
+  → account.balance = current + 500
+  → Save account
+  → Kafka publish: topic="credit-success"
+      message: "transactionId=42"
+
+Result: ABC123 lost 500, XYZ789 gained 500. Transfer complete.
+(Transaction is currently left as PENDING — marking it COMPLETED on credit-success
+is a natural next step to add.)
+</pre>
+
+<h3>Saga Failure Path — compensation (rollback)</h3>
+<pre>
+Same scenario, but credit step fails (e.g., XYZ789 account doesn't exist):
+
+Steps 1-3 same as above. ABC123 has already been debited.
+
+Step 4 — SagaEventConsumer.handleCreditRequest() [in account-service]
+  → Load account XYZ789 from DB
+  → account == null? YES (doesn't exist)
+  → Kafka publish: topic="credit-failed"
+      message: "transactionId=42"
+
+Step 5 — TransactionEventConsumer.handleCreditFailed() [in transaction-service]
+  → Parse transactionId=42
+  → Load transaction(42), set status="FAILED", save
+  → Kafka publish: topic="compensate-debit"
+      message: "transactionId=42,fromAccount=ABC123,amount=500.0"
+
+Step 6 — SagaEventConsumer.handleCompensateDebit() [in account-service]
+  → Parse fromAccount=ABC123, amount=500
+  → Load account ABC123
+  → account.balance = 500 + 500 = 1000  ← money refunded!
+  → Save account
+
+Result: ABC123 gets their 500 back. Transaction marked FAILED. No money lost.
+</pre>
+
+<div class="warning">
+<strong>Compensation is not a rollback.</strong> It is a new forward transaction that undoes the effect.
+If the compensation step itself fails (network error after debit but before compensation),
+money can still be lost. In production systems, compensation failures are logged to a
+"dead letter queue" and resolved manually or retried. Our system currently logs
+<code>"Compensation failed: " + message</code> to <code>System.err</code> as a placeholder.
+</div>
+
+<h3>TransactionEventProducer.java (transaction-service)</h3>
+<pre>
+@Component
+public class TransactionEventProducer {
+
+    @Autowired
+    private KafkaTemplate&lt;String, String&gt; kafkaTemplate;
+
+    public void publishDebitRequest(String message) {
+        kafkaTemplate.send("debit-request", message);    ← starts the Saga
+    }
+
+    public void publishCreditRequest(String message) {
+        kafkaTemplate.send("credit-request", message);   ← step 2 of Saga
+    }
+
+    public void publishCompensateDebit(String message) {
+        kafkaTemplate.send("compensate-debit", message); ← rollback step
+    }
+}
+</pre>
+
+<h3>TransactionEventConsumer.java (transaction-service)</h3>
+<pre>
+@Component
+public class TransactionEventConsumer {
+
+    @KafkaListener(topics = "debit-success", groupId = "transaction-service-group")
+    public void handleDebitSuccess(String message) {
+        Integer transactionId = extractId(message);
+        Transaction t = transactionRepo.findById(transactionId).orElseThrow();
+
+        // debit succeeded — now request credit
+        String creditMsg = "transactionId=" + transactionId
+                + ",toAccount=" + t.getToAccountId()
+                + ",amount=" + t.getAmount();
+        producer.publishCreditRequest(creditMsg);
+    }
+
+    @KafkaListener(topics = "debit-failed", groupId = "transaction-service-group")
+    public void handleDebitFailed(String message) {
+        // debit failed before any money moved — just mark FAILED
+        Integer transactionId = extractId(message);
+        Transaction t = transactionRepo.findById(transactionId).orElseThrow();
+        t.setStatus("FAILED");
+        transactionRepo.save(t);
+    }
+
+    @KafkaListener(topics = "credit-failed", groupId = "transaction-service-group")
+    public void handleCreditFailed(String message) {
+        // credit failed after debit succeeded — must compensate
+        Integer transactionId = extractId(message);
+        Transaction t = transactionRepo.findById(transactionId).orElseThrow();
+        t.setStatus("FAILED");
+        transactionRepo.save(t);
+
+        // publish compensate-debit so account-service refunds sender
+        String compensateMsg = "transactionId=" + transactionId
+                + ",fromAccount=" + t.getFromAccountId()
+                + ",amount=" + t.getAmount();
+        producer.publishCompensateDebit(compensateMsg);
+    }
+
+    private Integer extractId(String message) {
+        // parses "transactionId=42,..." → 42
+        String part = message.split(",")[0];
+        return Integer.parseInt(part.split("=")[1]);
+    }
+}
+</pre>
+<div class="important">
+<strong>Why transaction-service uses the DB in event handlers:</strong>
+When <code>handleDebitSuccess</code> fires, it needs to know the <code>toAccountId</code> and amount
+for the credit step. It gets this by loading the transaction from its own DB using the
+<code>transactionId</code> carried in the message. This is how services pass context through
+Kafka without bloating the message — carry just the ID, look up details locally.
+</div>
+
+<h3>SagaEventConsumer.java (account-service)</h3>
+<pre>
+@Component
+public class SagaEventConsumer {
+
+    @KafkaListener(topics = "debit-request", groupId = "account-service-group")
+    public void handleDebitRequest(String message) {
+        // message: "transactionId=42,fromAccount=ABC123,amount=500.0"
+        try {
+            String transactionId = extract(message, "transactionId");
+            String accountNumber = extract(message, "fromAccount");
+            BigDecimal amount    = new BigDecimal(extract(message, "amount"));
+
+            Account account = accountRepo.findByAccountNumber(accountNumber);
+
+            if (account == null || account.getBalance().compareTo(amount) &lt; 0) {
+                producer.publishEvent("debit-failed", "transactionId=" + transactionId);
+                return;
+            }
+
+            account.setBalance(account.getBalance().subtract(amount));
+            accountRepo.save(account);
+            producer.publishEvent("debit-success", "transactionId=" + transactionId);
+
+        } catch (Exception e) {
+            String transactionId = extract(message, "transactionId");
+            producer.publishEvent("debit-failed", "transactionId=" + transactionId);
+        }
+    }
+
+    @KafkaListener(topics = "credit-request", groupId = "account-service-group")
+    public void handleCreditRequest(String message) {
+        // message: "transactionId=42,toAccount=XYZ789,amount=500.0"
+        try {
+            String transactionId = extract(message, "transactionId");
+            String accountNumber = extract(message, "toAccount");
+            BigDecimal amount    = new BigDecimal(extract(message, "amount"));
+
+            Account account = accountRepo.findByAccountNumber(accountNumber);
+            if (account == null) {
+                producer.publishEvent("credit-failed", "transactionId=" + transactionId);
+                return;
+            }
+
+            account.setBalance(account.getBalance().add(amount));
+            accountRepo.save(account);
+            producer.publishEvent("credit-success", "transactionId=" + transactionId);
+
+        } catch (Exception e) {
+            String transactionId = extract(message, "transactionId");
+            producer.publishEvent("credit-failed", "transactionId=" + transactionId);
+        }
+    }
+
+    @KafkaListener(topics = "compensate-debit", groupId = "account-service-group")
+    public void handleCompensateDebit(String message) {
+        // message: "transactionId=42,fromAccount=ABC123,amount=500.0"
+        try {
+            String accountNumber = extract(message, "fromAccount");
+            BigDecimal amount    = new BigDecimal(extract(message, "amount"));
+
+            Account account = accountRepo.findByAccountNumber(accountNumber);
+            if (account != null) {
+                account.setBalance(account.getBalance().add(amount));
+                accountRepo.save(account);
+            }
+        } catch (Exception e) {
+            // compensation failed — needs manual intervention
+            System.err.println("Compensation failed: " + message);
+        }
+    }
+
+    private String extract(String message, String key) {
+        for (String part : message.split(",")) {
+            if (part.startsWith(key + "=")) {
+                return part.split("=", 2)[1];
+            }
+        }
+        throw new RuntimeException("Key not found in message: " + key);
+    }
+}
+</pre>
+
+<div class="note">
+<strong>Why try-catch around every handler:</strong> If a KafkaListener throws an uncaught exception,
+Spring Kafka retries the message by default. In a Saga, retrying a debit that already succeeded
+would debit twice. Wrapping in try-catch and publishing "failed" on any exception makes
+the behavior predictable: exactly one outcome (success or failure) per message.
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== FULL FLOW ==================== -->
+<h2 id="flow">5. Full Updated System Flow (3 Services)</h2>
+
+<pre>
+Services:
+  user-service      → port 8081
+  account-service   → port 8082
+  transaction-service → port 8083
+
+─────────────────────────────────────────────────────────────
+FLOW A: Register + Login
+─────────────────────────────────────────────────────────────
+Postman
+  → POST /api/users/register (user-service:8081)
+     Save user to DB
+
+  → POST /api/users/login (user-service:8081)
+     Validate password, return JWT token
+
+─────────────────────────────────────────────────────────────
+FLOW B: Create Account
+─────────────────────────────────────────────────────────────
+Postman (with JWT header)
+  → POST /api/accounts/create (account-service:8082)
+     1. JwtFilter validates token
+     2. Feign → user-service:8081 GET /api/users/{userId} (validates user exists)
+        → user-service checks Redis cache → or hits DB → returns user
+     3. Save Account to DB (UUID account number, PENDING balance)
+     4. @Async: banking-async thread publishes to Kafka "account-created"
+     5. Return 201 CREATED
+
+Kafka "account-created" → AccountEventConsumer (user-service)
+     → Logs: "Account created event received: userId=X, account=XXXXX"
+
+─────────────────────────────────────────────────────────────
+FLOW C: Transfer Money (Saga)
+─────────────────────────────────────────────────────────────
+Postman (with JWT header)
+  → POST /api/transactions/transfer (transaction-service:8083)
+     1. Feign → account-service:8082 GET /api/accounts/account/{fromAcc}
+     2. Feign → account-service:8082 GET /api/accounts/account/{toAcc}
+     3. Check balance &gt;= amount (early guard)
+     4. Save Transaction(status=PENDING) to DB
+     5. Kafka publish: "debit-request" → "transactionId=42,fromAccount=ABC,amount=500"
+     6. Return 202 ACCEPTED (transaction is still PENDING)
+
+Kafka "debit-request" → SagaEventConsumer (account-service)
+     → Debit ABC balance, save
+     → Kafka publish: "debit-success" → "transactionId=42"
+
+Kafka "debit-success" → TransactionEventConsumer (transaction-service)
+     → Load transaction 42 from DB
+     → Kafka publish: "credit-request" → "transactionId=42,toAccount=XYZ,amount=500"
+
+Kafka "credit-request" → SagaEventConsumer (account-service)
+     → Credit XYZ balance, save
+     → Kafka publish: "credit-success" → "transactionId=42"
+     (currently: transaction stays PENDING — marking COMPLETED is next step)
+
+─────────────────────────────────────────────────────────────
+FLOW C (failure): Credit fails → Compensation
+─────────────────────────────────────────────────────────────
+... (debit succeeded, then credit fails) ...
+Kafka "credit-failed" → TransactionEventConsumer (transaction-service)
+     → Set transaction status = "FAILED", save
+     → Kafka publish: "compensate-debit" → "transactionId=42,fromAccount=ABC,amount=500"
+
+Kafka "compensate-debit" → SagaEventConsumer (account-service)
+     → Refund ABC: balance += 500, save
+     → No further publish (Saga ends)
+
+─────────────────────────────────────────────────────────────
+FLOW D: Dashboard
+─────────────────────────────────────────────────────────────
+Postman (with JWT header)
+  → GET /api/accounts/dashboard/{userId} (account-service:8082)
+     1. Feign → user-service:8081 GET /api/users/{userId}
+        → Returns UserDto (name, email)
+     2. DB query: all accounts for userId
+     3. Sum balances using BigDecimal
+     4. Return DashboardResponse {userName, email, accounts, totalBalance}
+</pre>
+
+<div class="page-break"></div>
+
+<!-- ==================== ERRORS ==================== -->
+<h2 id="errors">6. Common Errors and Fixes (Phase 3)</h2>
+
+<table>
+    <tr><th>Error</th><th>Cause</th><th>Fix</th></tr>
+    <tr>
+        <td>@Async method runs on same thread (synchronously)</td>
+        <td>@EnableAsync missing on AsyncConfig, OR method called from within same class</td>
+        <td>Add @EnableAsync to AsyncConfig. Only call @Async methods from outside the class.</td>
+    </tr>
+    <tr>
+        <td>Bean named "taskExecuter" not found</td>
+        <td>Typo mismatch between @Bean(name="taskExecuter") and @Async("taskExecuter")</td>
+        <td>Both must use the exact same string. Note: "Executer" not "Executor" in this codebase.</td>
+    </tr>
+    <tr>
+        <td>Feign throws 404 when validating account in transaction-service</td>
+        <td>account-service doesn't have GET /api/accounts/account/{accountNumber} yet</td>
+        <td>Ensure account-service has getAccount() method and the endpoint is properly mapped.</td>
+    </tr>
+    <tr>
+        <td>Saga debit fires twice (duplicate debit)</td>
+        <td>KafkaListener threw exception, Spring retried the message</td>
+        <td>Wrap the entire listener body in try-catch and publish failure event in the catch block.</td>
+    </tr>
+    <tr>
+        <td>Transaction stays PENDING forever</td>
+        <td>credit-success event published but nothing consumes it to mark COMPLETED</td>
+        <td>Add @KafkaListener for "credit-success" in TransactionEventConsumer and set status = "COMPLETED".</td>
+    </tr>
+    <tr>
+        <td>message.split(",") breaks if account number contains a comma</td>
+        <td>Simple string parsing is fragile</td>
+        <td>Production fix: use JSON message format (Jackson ObjectMapper). The current approach works for development.</td>
+    </tr>
+    <tr>
+        <td>Insufficient Balance thrown even when balance is enough</td>
+        <td>Double comparison: <code>balance &lt; amount</code> on primitives may have floating-point errors</td>
+        <td>Use BigDecimal.compareTo() for balance checks. The Feign-side check in TransactionServiceImpl uses .doubleValue() which is approximate.</td>
+    </tr>
+    <tr>
+        <td>transaction-service can't reach account-service</td>
+        <td>account.service.url property not set, or wrong port</td>
+        <td>Check application.yaml: <code>account.service.url: http://localhost:8082</code>. In K8s: <code>http://account-service:8082</code>.</td>
+    </tr>
+</table>
+
+<h2>Current Project State — Summary</h2>
+
+<table>
+    <tr><th>Service</th><th>Port</th><th>APIs</th><th>Notable Features</th></tr>
+    <tr>
+        <td>user-service</td>
+        <td>8081</td>
+        <td>register, login, getUser</td>
+        <td>JWT generation, Redis caching, AccountEventConsumer</td>
+    </tr>
+    <tr>
+        <td>account-service</td>
+        <td>8082</td>
+        <td>createAccount, getAllAccounts, dashboard, getAccount, updateBalance</td>
+        <td>Feign to user-service, @Async Kafka publish, SagaEventConsumer</td>
+    </tr>
+    <tr>
+        <td>transaction-service</td>
+        <td>8083</td>
+        <td>transfer (POST), history (GET)</td>
+        <td>Feign to account-service, Saga orchestration via Kafka</td>
+    </tr>
+</table>
+
+<h3>What was covered across all 3 documents</h3>
+<table>
+    <tr><th>Document</th><th>Topics</th></tr>
+    <tr><td>Doc 1</td><td>Architecture, Spring Boot annotations, JPA, JWT, SecurityConfig, JwtFilter, OpenFeign, Kafka basics (Producer + Consumer)</td></tr>
+    <tr><td>Doc 2</td><td>Redis caching (@Cacheable), Kafka deep dive (topics/offsets/groups), Docker (Dockerfile, docker-compose), Kubernetes (Deployment, Service, kubectl, port-forward)</td></tr>
+    <tr><td>Doc 3</td><td>New account-service APIs (dashboard, getAccount), @Async + ThreadPoolTaskExecutor, transaction-service (new microservice), Saga Pattern (choreography, happy path, compensation)</td></tr>
+</table>
+
+<br/><br/>
+<hr/>
+<p style="color:#888; font-size:10pt; text-align:center;">
+    Banking System Learning Document 3 &mdash; Phase 3 Complete<br/>
+    System now has: user-service + account-service + transaction-service + Saga Pattern<br/>
+    Next: Multithreading deeper dive &rarr; AWS &rarr; React Frontend
+</p>
+
+</body>
+</html>

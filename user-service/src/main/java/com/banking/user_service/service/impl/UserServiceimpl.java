@@ -50,7 +50,7 @@ public class UserServiceimpl implements UserService{
         if(!passwordEncoder.matches(request.getPassword(),user.getPassword())){
             throw new RuntimeException("Invalid Password");
         }
-        return jwtUtil.generateToken(request.getMail());
+        return jwtUtil.generateToken(request.getMail(),user.getId());
     }
 
     @Override

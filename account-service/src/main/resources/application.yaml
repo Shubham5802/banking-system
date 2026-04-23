@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: account-service
+  datasource:
+    url: jdbc:mysql://localhost:3306/banking_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: postmig#2020
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  kafka:
+    bootstrap-servers: localhost:9093
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      group-id: account-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+server:
+  port: 8082
+
+jwt:
+  secret: myBankingAppSuperSecretKeyForJWT2024MustBe32Chars
+  expiration: 86400000
+
+user:
+  service:
+    url: http://localhost:8081

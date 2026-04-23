@@ -27,6 +27,7 @@ public class JwtUtil {
             getClaims(token).getSubject();
             return true;
         }catch (Exception e){
+            System.out.println("JWT validation failed: "+e.getMessage());
             return false;
         }
 

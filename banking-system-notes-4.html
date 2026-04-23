@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Banking System - Learning Document 4</title>
+    <style>
+        body {
+            font-family: Calibri, Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            margin: 60px;
+            color: #1a1a1a;
+        }
+        h1 {
+            font-size: 26pt;
+            color: #1a3c6e;
+            border-bottom: 3px solid #1a3c6e;
+            padding-bottom: 8px;
+        }
+        h2 {
+            font-size: 18pt;
+            color: #1a3c6e;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 4px;
+            margin-top: 36px;
+        }
+        h3 {
+            font-size: 14pt;
+            color: #2e6da4;
+            margin-top: 24px;
+        }
+        h4 {
+            font-size: 12pt;
+            color: #444;
+            margin-top: 16px;
+            margin-bottom: 4px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            border-left: 4px solid #2e6da4;
+            padding: 12px 16px;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        code {
+            background-color: #f0f0f0;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+        th {
+            background-color: #1a3c6e;
+            color: white;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        td {
+            border: 1px solid #ccc;
+            padding: 8px 12px;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .note {
+            background-color: #fff8dc;
+            border-left: 4px solid #f0c040;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        .important {
+            background-color: #e8f0fe;
+            border-left: 4px solid #2e6da4;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        .warning {
+            background-color: #fdecea;
+            border-left: 4px solid #c0392b;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        ul {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+        li {
+            margin-bottom: 4px;
+        }
+        .toc a {
+            color: #2e6da4;
+            text-decoration: none;
+        }
+        .subtitle {
+            color: #555;
+            font-size: 13pt;
+            margin-top: -10px;
+            margin-bottom: 30px;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Banking System &mdash; Learning Document 4</h1>
+<p class="subtitle">API Gateway | Spring Cloud Gateway | JWT Filter | Docker Compose (Full System)<br/>
+Written for: Shubham (6 years Java &mdash; JDBC, JSP, Spring MVC)<br/>
+Date: April 2026 &mdash; Continues from Document 3 (transaction-service, Saga Pattern)</p>
+
+<hr/>
+
+<h2>What was built since Document 3</h2>
+<p>Document 3 ended after the Saga pattern with transaction-service. Since then, two major things were added:</p>
+<ol>
+    <li><strong>API Gateway</strong> &mdash; a new microservice (port 8080) that acts as the single entry point for all client requests, validates JWT tokens, and routes to the correct service</li>
+    <li><strong>Full Docker Compose</strong> &mdash; all 4 services + MySQL + Kafka + Redis now run as containers; environment variable injection so the same image works locally and in Docker</li>
+</ol>
+
+<hr/>
+
+<h2>Table of Contents</h2>
+<div class="toc">
+<ol>
+    <li><a href="#gateway-concept">What is an API Gateway and why do we need one?</a>
+        <ul>
+            <li>The problem without a gateway</li>
+            <li>What the gateway solves</li>
+            <li>Gateway vs Load Balancer</li>
+        </ul>
+    </li>
+    <li><a href="#spring-cloud-gateway">Spring Cloud Gateway</a>
+        <ul>
+            <li>Reactive (WebFlux) vs MVC-based gateway</li>
+            <li>pom.xml dependency</li>
+            <li>application.yaml routing config</li>
+            <li>How routes work</li>
+        </ul>
+    </li>
+    <li><a href="#jwtutil">JwtUtil in the Gateway</a>
+        <ul>
+            <li>Why the gateway needs its own JwtUtil</li>
+            <li>What it contains (vs user-service JwtUtil)</li>
+        </ul>
+    </li>
+    <li><a href="#jwtfilter">JwtAuthFilter &mdash; GlobalFilter</a>
+        <ul>
+            <li>GlobalFilter vs OncePerRequestFilter</li>
+            <li>ServerWebExchange explained</li>
+            <li>Mono&lt;Void&gt; explained</li>
+            <li>Ordered interface</li>
+            <li>Public path exclusion</li>
+            <li>Full filter logic walkthrough</li>
+        </ul>
+    </li>
+    <li><a href="#docker">Docker &mdash; Full System</a>
+        <ul>
+            <li>Dockerfile for each service</li>
+            <li>docker-compose.yml &mdash; what changed</li>
+            <li>Environment variable injection</li>
+            <li>restart: on-failure explained</li>
+            <li>Docker networking &mdash; service name as hostname</li>
+        </ul>
+    </li>
+    <li><a href="#flow">Full Updated System Flow</a></li>
+    <li><a href="#errors">Common Errors and Fixes (Phase 4)</a></li>
+</ol>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== GATEWAY CONCEPT ==================== -->
+<h2 id="gateway-concept">1. What is an API Gateway and why do we need one?</h2>
+
+<h3>The problem without a gateway</h3>
+<p>Before the gateway, your system had 3 services running on 3 different ports:</p>
+<pre>
+Client (Postman / React)
+   |
+   |--- POST localhost:8081/api/users/register   → user-service
+   |--- POST localhost:8082/api/accounts/create  → account-service
+   |--- POST localhost:8083/api/transactions/...  → transaction-service
+</pre>
+<p>This creates several problems:</p>
+<ul>
+    <li>The client has to know the port of every service</li>
+    <li>JWT validation had to be implemented separately in every service</li>
+    <li>CORS, logging, rate limiting would need to be repeated in every service</li>
+    <li>In production, you cannot expose internal service ports to the internet</li>
+</ul>
+
+<h3>What the gateway solves</h3>
+<p>The gateway is a single entry point. The client only ever talks to port 8080.
+The gateway decides where to forward the request based on the URL path.</p>
+<pre>
+Client (Postman / React)
+   |
+   └── ALL requests → localhost:8080 (api-gateway)
+                           |
+                  JwtAuthFilter (validates token)
+                           |
+              ┌────────────┼────────────┐
+              ↓            ↓            ↓
+       user-service  account-service  transaction-service
+         :8081          :8082            :8083
+</pre>
+
+<div class="important">
+<strong>Analogy:</strong> Think of the gateway like a receptionist at a bank. Every visitor (request) walks through the front door (port 8080). The receptionist checks their ID (JWT), then directs them to the right department (service). No visitor walks directly into the back office.
+</div>
+
+<h3>Gateway vs Load Balancer</h3>
+<table>
+    <tr><th>Feature</th><th>API Gateway</th><th>Load Balancer</th></tr>
+    <tr><td>Routes by URL path</td><td>Yes</td><td>No</td></tr>
+    <tr><td>JWT / Auth validation</td><td>Yes</td><td>No</td></tr>
+    <tr><td>Distributes load across instances</td><td>Sometimes</td><td>Yes (main purpose)</td></tr>
+    <tr><td>Example</td><td>Spring Cloud Gateway, Kong</td><td>AWS ALB, Nginx</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== SPRING CLOUD GATEWAY ==================== -->
+<h2 id="spring-cloud-gateway">2. Spring Cloud Gateway</h2>
+
+<h3>Reactive (WebFlux) vs MVC-based gateway</h3>
+<p>Spring Cloud Gateway comes in two flavours:</p>
+<table>
+    <tr><th>Artifact</th><th>Based on</th><th>Filter type</th><th>Status</th></tr>
+    <tr><td>spring-cloud-starter-gateway-server-webflux</td><td>WebFlux (reactive/non-blocking)</td><td>GlobalFilter</td><td>Current standard</td></tr>
+    <tr><td>spring-cloud-starter-gateway-server-webmvc</td><td>Spring MVC (servlet/blocking)</td><td>HandlerInterceptor</td><td>Newer, servlet-based</td></tr>
+</table>
+<p>We use the <strong>WebFlux</strong> based gateway. This means the gateway itself is reactive (runs on Netty, not Tomcat), but the downstream services (user-service, account-service etc.) can still be normal Spring MVC apps. They are completely independent processes &mdash; one being reactive does not affect the others.</p>
+
+<div class="note">
+<strong>Why Netty and not Tomcat?</strong> Netty is a non-blocking, event-driven network framework. Spring Cloud Gateway uses it because a gateway handles thousands of concurrent connections &mdash; blocking one thread per request (Tomcat style) would be wasteful. With Netty, one thread can handle many connections at once.
+</div>
+
+<h3>pom.xml dependency</h3>
+<pre>
+&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.cloud&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-cloud-starter-gateway-server-webflux&lt;/artifactId&gt;
+&lt;/dependency&gt;
+</pre>
+<p>No version needed &mdash; it is managed by the Spring Cloud BOM:</p>
+<pre>
+&lt;properties&gt;
+    &lt;spring-cloud.version&gt;2025.0.0&lt;/spring-cloud.version&gt;
+&lt;/properties&gt;
+
+&lt;dependencyManagement&gt;
+    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework.cloud&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-cloud-dependencies&lt;/artifactId&gt;
+            &lt;version&gt;${spring-cloud.version}&lt;/version&gt;
+            &lt;type&gt;pom&lt;/type&gt;
+            &lt;scope&gt;import&lt;/scope&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;
+&lt;/dependencyManagement&gt;
+</pre>
+
+<h3>application.yaml routing config</h3>
+<pre>
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: user-service
+              uri: ${USER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/users/**
+
+            - id: account-service
+              uri: ${ACCOUNT_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/accounts/**
+
+            - id: transaction-service
+              uri: ${TRANSACTION_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/transactions/**
+
+jwt:
+  secret: myBankingAppSuperSecretKeyForJWT2024MustBe32Chars
+</pre>
+
+<h3>How routes work</h3>
+<p>Each route has two key parts:</p>
+<ul>
+    <li><strong>predicates</strong> &mdash; the condition to match. <code>Path=/api/users/**</code> means: any request whose URL starts with <code>/api/users/</code></li>
+    <li><strong>uri</strong> &mdash; where to forward the matched request. Uses environment variable with a localhost fallback so the same config works locally and inside Docker</li>
+</ul>
+<div class="note">
+<strong>The <code>${VAR:default}</code> syntax:</strong> This is Spring's property placeholder syntax.
+<code>${USER_SERVICE_URL:http://localhost:8081}</code> means: use the value of environment variable
+<code>USER_SERVICE_URL</code> if it exists; otherwise fall back to <code>http://localhost:8081</code>.
+This is how the same JAR works in both local development and Docker without changing any code.
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== JWTUTIL ==================== -->
+<h2 id="jwtutil">3. JwtUtil in the Gateway</h2>
+
+<h3>Why the gateway needs its own JwtUtil</h3>
+<p>The gateway and user-service are <strong>separate JVMs</strong>. They do not share code at runtime.
+The gateway cannot call user-service to ask "is this token valid?" for every request &mdash; that would
+be an extra network call on every single request, adding latency and creating a dependency.</p>
+<p>Instead, the gateway has its own copy of <code>JwtUtil</code> that uses the <strong>same secret key</strong>
+as user-service to validate tokens independently. Both services share the secret via config, not via code.</p>
+
+<h3>What it contains (vs user-service JwtUtil)</h3>
+<table>
+    <tr><th>Method</th><th>user-service JwtUtil</th><th>gateway JwtUtil</th></tr>
+    <tr><td>generateToken()</td><td>Yes &mdash; creates tokens on login</td><td>No &mdash; gateway never creates tokens</td></tr>
+    <tr><td>isTokenValid()</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>extractEmail()</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>getClaims()</td><td>Yes (private helper)</td><td>Yes (private helper)</td></tr>
+</table>
+
+<pre>
+@Component
+public class JwtUtil {
+
+    @Value("${jwt.secret}")
+    private String secret;
+
+    private SecretKey getSigningKey() {
+        return Keys.hmacShaKeyFor(secret.getBytes());
+    }
+
+    public boolean isTokenValid(String token) {
+        try {
+            getClaims(token).getSubject();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private Claims getClaims(String token) {
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+    }
+
+    public String extractEmail(String token) {
+        return getClaims(token).getSubject();
+    }
+}
+</pre>
+
+<div class="page-break"></div>
+
+<!-- ==================== JWT FILTER ==================== -->
+<h2 id="jwtfilter">4. JwtAuthFilter &mdash; GlobalFilter</h2>
+
+<h3>GlobalFilter vs OncePerRequestFilter</h3>
+<p>In user-service and account-service, JWT validation uses <code>OncePerRequestFilter</code> &mdash; a
+Spring MVC (servlet) concept. The gateway uses a different mechanism because it is reactive (WebFlux).</p>
+
+<table>
+    <tr><th></th><th>OncePerRequestFilter</th><th>GlobalFilter</th></tr>
+    <tr><td>Used in</td><td>Spring MVC services</td><td>Spring Cloud Gateway</td></tr>
+    <tr><td>Request object</td><td>HttpServletRequest</td><td>ServerWebExchange</td></tr>
+    <tr><td>Response object</td><td>HttpServletResponse</td><td>ServerWebExchange</td></tr>
+    <tr><td>Pass to next</td><td>filterChain.doFilter()</td><td>chain.filter(exchange)</td></tr>
+    <tr><td>Return type</td><td>void</td><td>Mono&lt;Void&gt;</td></tr>
+    <tr><td>Applies to</td><td>One service</td><td>All routes in the gateway</td></tr>
+</table>
+
+<div class="important">
+<strong>Concept is identical, API is different.</strong> Both intercept every request, check the token, and
+either pass the request forward or block it with 401. The difference is only in the classes used,
+because one is blocking (servlet) and the other is reactive (WebFlux).
+</div>
+
+<h3>ServerWebExchange explained</h3>
+<p>In Spring MVC you have two separate objects: <code>HttpServletRequest</code> (incoming) and
+<code>HttpServletResponse</code> (outgoing). In WebFlux, both are wrapped into a single object called
+<code>ServerWebExchange</code>.</p>
+<pre>
+// Spring MVC equivalent:
+HttpServletRequest  request  = ...
+HttpServletResponse response = ...
+
+// WebFlux equivalent:
+ServerWebExchange exchange = ...
+exchange.getRequest()   // the incoming request
+exchange.getResponse()  // the outgoing response
+</pre>
+
+<h3>Mono&lt;Void&gt; explained</h3>
+<p>WebFlux is reactive &mdash; everything is asynchronous and returns a <code>Mono</code> or <code>Flux</code>.
+Think of <code>Mono&lt;Void&gt;</code> as a <strong>promise that will complete eventually</strong> with no return value.</p>
+<ul>
+    <li><code>chain.filter(exchange)</code> &mdash; "pass this request to the next step, I'm done here" (returns Mono&lt;Void&gt;)</li>
+    <li><code>exchange.getResponse().setComplete()</code> &mdash; "send this response now, stop processing" (returns Mono&lt;Void&gt;)</li>
+</ul>
+<p>Both return <code>Mono&lt;Void&gt;</code>, which is why the filter method can <code>return</code> either one.</p>
+
+<h3>Ordered interface</h3>
+<p>When multiple <code>GlobalFilter</code> beans exist in the gateway, Spring needs to know which one runs first.
+The <code>Ordered</code> interface provides a <code>getOrder()</code> method for this.</p>
+<pre>
+@Override
+public int getOrder() {
+    return Ordered.HIGHEST_PRECEDENCE;   // = Integer.MIN_VALUE = runs first
+}
+</pre>
+<p>Lower number = higher priority = runs earlier. <code>HIGHEST_PRECEDENCE</code> ensures JWT validation
+runs before any routing or other filter. You do not want a request to be routed to a service before
+checking whether the caller is authenticated.</p>
+
+<h3>Public path exclusion</h3>
+<p>Register and login do not require a token (the user does not have one yet). These paths must be
+whitelisted so the filter lets them through without checking the Authorization header.</p>
+<pre>
+private static final List&lt;String&gt; PUBLIC_PATHS = List.of(
+    "/api/users/register",
+    "/api/users/login"
+);
+</pre>
+<p>Inside the filter, this is checked first:</p>
+<pre>
+if (PUBLIC_PATHS.contains(path)) {
+    return chain.filter(exchange);   // skip JWT check, pass through
+}
+</pre>
+
+<h3>Full filter logic walkthrough</h3>
+<pre>
+@Component
+public class JwtAuthFilter implements GlobalFilter, Ordered {
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
+    private static final List&lt;String&gt; PUBLIC_PATHS = List.of(
+        "/api/users/register",
+        "/api/users/login"
+    );
+
+    @Override
+    public int getOrder() {
+        return Ordered.HIGHEST_PRECEDENCE;
+    }
+
+    @Override
+    public Mono&lt;Void&gt; filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+
+        // Step 1: get the requested URL path
+        String path = exchange.getRequest().getURI().getPath();
+
+        // Step 2: if it's a public endpoint, skip JWT check
+        if (PUBLIC_PATHS.contains(path)) {
+            return chain.filter(exchange);
+        }
+
+        // Step 3: read the Authorization header
+        String authHeader = exchange.getRequest().getHeaders().getFirst("Authorization");
+
+        // Step 4: header must exist and start with "Bearer "
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
+        }
+
+        // Step 5: extract token (remove "Bearer " prefix = first 7 chars)
+        String token = authHeader.substring(7);
+
+        // Step 6: validate the token using JwtUtil
+        if (!jwtUtil.isTokenValid(token)) {
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
+        }
+
+        // Step 7: token is valid, forward the request
+        return chain.filter(exchange);
+    }
+}
+</pre>
+
+<div class="note">
+<strong>Why substring(7)?</strong> The Authorization header value looks like: <code>Bearer eyJhbGci...</code>.
+"Bearer " is 7 characters (6 letters + 1 space). So <code>authHeader.substring(7)</code> gives you
+just the token part: <code>eyJhbGci...</code>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== DOCKER ==================== -->
+<h2 id="docker">5. Docker &mdash; Full System</h2>
+
+<h3>Dockerfile for each service</h3>
+<p>Every Spring Boot service follows the same Dockerfile pattern:</p>
+<pre>
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY target/user-service-0.0.1-SNAPSHOT.jar app.jar
+ENTRYPOINT ["java", "-jar", "app.jar"]
+</pre>
+<p>Line by line:</p>
+<ul>
+    <li><code>FROM eclipse-temurin:21-jre</code> &mdash; base image containing Java 21 JRE (just the runtime, not the full JDK &mdash; smaller image)</li>
+    <li><code>WORKDIR /app</code> &mdash; sets the working directory inside the container to <code>/app</code></li>
+    <li><code>COPY target/...jar app.jar</code> &mdash; copies the built jar from your machine into the container and renames it <code>app.jar</code></li>
+    <li><code>ENTRYPOINT</code> &mdash; the command that runs when the container starts; equivalent to <code>java -jar app.jar</code> in terminal</li>
+</ul>
+
+<div class="note">
+<strong>Build order matters:</strong> You must run <code>mvn clean package -DskipTests</code> first to
+produce the jar in the <code>target/</code> folder, then <code>docker build</code> to package that jar
+into a Docker image. If you build the image without building the jar first, Docker will fail because
+the <code>COPY</code> instruction finds no file.
+</div>
+
+<h3>docker-compose.yml &mdash; what changed</h3>
+<p>The original docker-compose.yml had user-service, account-service, transaction-service, MySQL, Redis, Kafka and Zookeeper. Two things were added/fixed:</p>
+
+<h4>1. api-gateway service added</h4>
+<pre>
+api-gateway:
+  image: api-gateway:latest
+  container_name: banking-api-gateway
+  ports:
+    - "8080:8080"
+  environment:
+    USER_SERVICE_URL: http://user-service:8081
+    ACCOUNT_SERVICE_URL: http://account-service:8082
+    TRANSACTION_SERVICE_URL: http://transaction-service:8083
+  depends_on:
+    - user-service
+    - account-service
+    - transaction-service
+</pre>
+
+<h4>2. restart: on-failure added to all Spring Boot services</h4>
+<pre>
+user-service:
+  restart: on-failure
+  ...
+
+account-service:
+  restart: on-failure
+  ...
+
+transaction-service:
+  restart: on-failure
+  ...
+</pre>
+
+<h3>Environment variable injection</h3>
+<p>Spring Boot automatically maps environment variables to application properties using a simple rule:
+uppercase + underscores maps to lowercase + dots.</p>
+<table>
+    <tr><th>Environment variable (Docker)</th><th>application.yaml property</th></tr>
+    <tr><td>SPRING_DATASOURCE_URL</td><td>spring.datasource.url</td></tr>
+    <tr><td>SPRING_DATASOURCE_USERNAME</td><td>spring.datasource.username</td></tr>
+    <tr><td>SPRING_KAFKA_BOOTSTRAP_SERVERS</td><td>spring.kafka.bootstrap-servers</td></tr>
+    <tr><td>SPRING_DATA_REDIS_HOST</td><td>spring.data.redis.host</td></tr>
+    <tr><td>USER_SERVICE_URL</td><td>user.service.url (or via ${USER_SERVICE_URL})</td></tr>
+</table>
+<p>This means <strong>you never change the JAR</strong> for different environments. The same image runs
+locally, in Docker, and in Kubernetes &mdash; you only change the environment variables.</p>
+
+<h3>restart: on-failure explained</h3>
+<p>Docker Compose's <code>depends_on</code> only waits for a container to <strong>start</strong>, not for
+the service inside it to be <strong>ready</strong>. MySQL takes 10&ndash;15 seconds after the container
+starts to accept connections. If user-service starts before MySQL is ready, it crashes with a
+"cannot connect to database" error.</p>
+<p><code>restart: on-failure</code> tells Docker: if this container exits with an error, automatically
+restart it. By the 2nd or 3rd attempt, MySQL is fully ready and the service starts successfully.</p>
+
+<div class="important">
+<strong>Production-grade fix:</strong> The proper solution is a MySQL healthcheck + <code>condition: service_healthy</code>
+in depends_on. But for development, <code>restart: on-failure</code> achieves the same result with less config.
+</div>
+
+<h3>Docker networking &mdash; service name as hostname</h3>
+<p>When containers run in the same Docker Compose file, Docker creates a shared network between them.
+On this network, each container is reachable by its <strong>service name</strong> as the hostname.</p>
+<pre>
+# WRONG (works on your machine, fails inside Docker)
+SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/banking_db
+
+# CORRECT (uses Docker service name as hostname)
+SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/banking_db
+</pre>
+<p>Inside Docker, <code>localhost</code> refers to the container itself &mdash; not to MySQL or any other
+container. This is the most common mistake when moving from local to Docker.</p>
+
+<table>
+    <tr><th>Service</th><th>Docker hostname</th><th>Port</th></tr>
+    <tr><td>MySQL</td><td>mysql</td><td>3306</td></tr>
+    <tr><td>Redis</td><td>redis</td><td>6379</td></tr>
+    <tr><td>Kafka</td><td>kafka</td><td>9092 (internal)</td></tr>
+    <tr><td>user-service</td><td>user-service</td><td>8081</td></tr>
+    <tr><td>account-service</td><td>account-service</td><td>8082</td></tr>
+    <tr><td>transaction-service</td><td>transaction-service</td><td>8083</td></tr>
+    <tr><td>api-gateway</td><td>api-gateway</td><td>8080</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== FULL FLOW ==================== -->
+<h2 id="flow">6. Full Updated System Flow</h2>
+
+<h3>Request flow through the complete system</h3>
+<pre>
+Client (Postman / React browser)
+         |
+         | All requests to port 8080
+         ↓
+  ┌─────────────────────────────────┐
+  │         API Gateway :8080        │
+  │                                  │
+  │  JwtAuthFilter                   │
+  │    ├── /api/users/register → skip JWT check  │
+  │    ├── /api/users/login    → skip JWT check  │
+  │    └── everything else    → validate token   │
+  │                                  │
+  │  Routes:                         │
+  │    /api/users/**       → user-service:8081   │
+  │    /api/accounts/**    → account-service:8082│
+  │    /api/transactions/**→ txn-service:8083    │
+  └─────────────────────────────────┘
+         |              |              |
+         ↓              ↓              ↓
+  user-service   account-service  transaction-service
+     :8081            :8082             :8083
+         |              |                |
+         └──────────────┴────────────────┘
+                        |
+              ┌─────────┴──────────┐
+              │                    │
+           MySQL               Kafka topics
+           :3306           ┌───────────────┐
+              |             │ debit-request │
+         [banking_db]       │ debit-success │
+              |             │ credit-request│
+      users table           │ credit-success│
+      accounts table        │ debit-failed  │
+      transactions table    │ compensate-.. │
+                            └───────────────┘
+                                    |
+                             account-service
+                           (SagaEventConsumer)
+                                    |
+                              Redis :6379
+                           (session cache in
+                            user-service)
+</pre>
+
+<h3>Authentication flow</h3>
+<pre>
+Step 1: POST /api/users/register  → creates user in DB
+Step 2: POST /api/users/login     → returns JWT token
+Step 3: All subsequent requests   → include header:
+                                    Authorization: Bearer &lt;token&gt;
+        Gateway validates token → if valid, forwards to service
+        Service receives request (already authenticated)
+</pre>
+
+<div class="page-break"></div>
+
+<!-- ==================== ERRORS ==================== -->
+<h2 id="errors">7. Common Errors and Fixes (Phase 4)</h2>
+
+<table>
+    <tr><th>Error</th><th>Cause</th><th>Fix</th></tr>
+    <tr>
+        <td>Cannot resolve symbol 'SpringBootApplication'</td>
+        <td>IntelliJ hasn't loaded Maven dependencies for the module</td>
+        <td>Right-click src/main/java → Mark Directory as → Sources Root. Then reload Maven panel.</td>
+    </tr>
+    <tr>
+        <td>dependencies.dependency.version for spring-cloud-starter-gateway-server-webmvc is missing</td>
+        <td>Artifact not found in BOM for the Spring Cloud version used</td>
+        <td>Switch to spring-cloud-starter-gateway-server-webflux which is correctly managed by the BOM</td>
+    </tr>
+    <tr>
+        <td>spring-cloud-starter-gateway is deprecated warning</td>
+        <td>Old artifact name used with Spring Cloud 2025.0.0</td>
+        <td>Replace with spring-cloud-starter-gateway-server-webflux in pom.xml. Update application.yaml keys from spring.cloud.gateway.routes to spring.cloud.gateway.server.webflux.routes</td>
+    </tr>
+    <tr>
+        <td>Ports are not available: bind :8081</td>
+        <td>Local Spring Boot service still running when trying to start Docker containers</td>
+        <td>Stop all locally running services in IntelliJ before running docker-compose up</td>
+    </tr>
+    <tr>
+        <td>Unable to determine Dialect without JDBC metadata</td>
+        <td>Spring Boot service starts before MySQL container is ready to accept connections</td>
+        <td>Add restart: on-failure to the service in docker-compose.yml</td>
+    </tr>
+    <tr>
+        <td>Connection refused: localhost/127.0.0.1:8081</td>
+        <td>Gateway application.yaml has hardcoded localhost URIs. Inside Docker, localhost = the container itself, not user-service</td>
+        <td>Use environment variable placeholders in application.yaml: uri: ${USER_SERVICE_URL:http://localhost:8081}. Docker Compose injects USER_SERVICE_URL=http://user-service:8081</td>
+    </tr>
+    <tr>
+        <td>401 Unauthorized on login/register</td>
+        <td>Public paths not added to PUBLIC_PATHS list in JwtAuthFilter</td>
+        <td>Add /api/users/register and /api/users/login to PUBLIC_PATHS</td>
+    </tr>
+    <tr>
+        <td>docker build requires 1 argument</td>
+        <td>Missing . (dot) at the end of docker build command</td>
+        <td>Run: docker build -t service-name:latest . (the dot = current directory = location of Dockerfile)</td>
+    </tr>
+</table>
+
+<hr/>
+<p><em>Document 4 complete. Next: Kubernetes &mdash; Deployments, Services, ConfigMaps, deploying the full system to Minikube.</em></p>
+
+</body>
+</html>
