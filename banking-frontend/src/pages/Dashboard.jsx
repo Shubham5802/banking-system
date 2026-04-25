@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { getAccounts, getUserIdFromToken } from "../services/accountService"
 import { getTransactionHistory} from '../services/transactionService'
 import Navbar from "../components/Navbar"
+import TransferForm from "../components/TransferForm"
 
 const Dashboard = () => {
   const [account,setAccount] = useState(null)
@@ -96,10 +97,16 @@ const Dashboard = () => {
                       )
                     }
             
-              <div>
-                {/* transfer form */}
-
-              </div>
+              <TransferForm 
+                accounts={account}
+                onTransferSuccess={() => {
+                  const token = localStorage.getItem("token")
+                  const userId = getUserIdFromToken(token)
+                  getAccounts(userId)
+                    .then(data => setAccount(data))
+                }}
+                    
+              />
             
 
                     

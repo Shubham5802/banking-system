@@ -10,15 +10,15 @@ const TransferForm = ({
         amount: ""
     })
 
-    const handleTrasfer = async (e) =>{
-        e.preventDefault()
-        await transferMoney(
-            form.fromAccountNumber,
-            form.toAccountNumber, 
-            Number(form.amount)
-        )
-        onTransferSuccess()
-    }
+    const handleTransfer = async (e) => {
+  e.preventDefault()
+  try {
+    await transferMoney(form.fromAccountNumber, form.toAccountNumber, Number(form.amount))
+    onTransferSuccess()
+  } catch (error) {
+    console.error("Transfer failed", error)
+  }
+}
 
   return (
     <div>
@@ -47,7 +47,7 @@ const TransferForm = ({
                 ...form, amount : e.target.value
             })
         }/>
-        <button type="submit">Transfer</button>
+        <button type="submit" className="bg-gray-300 rounded-2xl">Transfer</button>
       </form>
     </div>
   )
