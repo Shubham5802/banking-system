@@ -104,6 +104,10 @@ const Dashboard = () => {
                   const userId = getUserIdFromToken(token)
                   getAccounts(userId)
                     .then(data => setAccount(data))
+                  if(selectedAccount){
+                    getTransactionHistory(selectedAccount)
+                    .then(data => setTransactions(data))
+                  }
                 }}
                     
               />
