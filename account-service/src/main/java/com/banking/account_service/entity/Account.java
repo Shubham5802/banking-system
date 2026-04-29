@@ -33,4 +33,8 @@ public class Account {
 
     @CreatedDate
     private LocalDateTime createdAt;
+
+    private BigDecimal minimumBalance;
+
+    private BigDecimal overdraftLimit;
 }

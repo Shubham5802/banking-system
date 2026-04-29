@@ -7,6 +7,8 @@ import com.banking.account_service.dto.UpdateAccountRequest;
 import com.banking.account_service.dto.UserDto;
 import com.banking.account_service.entity.Account;
 import com.banking.account_service.exception.ResourceNotFoundException;
+import com.banking.account_service.factory.AccountFactory;
+import com.banking.account_service.factory.AccountFactoryProvider;
 import com.banking.account_service.kafka.AccountEventProducer;
 import com.banking.account_service.repository.AccountRepo;
 import com.banking.account_service.service.AccountService;
@@ -30,20 +32,17 @@ public class AccountServiceImpl implements AccountService {
     @Autowired
     AccountEventProducer accountEventProducer;
 
+    @Autowired
+    AccountFactoryProvider accountFactoryProvider;
+
     @Override
     public String createAccount(CreateAccountRequest request) {
 
+        //check if userId is valid
         userClient.getUserById(request.getUserId());
 
-        Account account = new Account();
-        account.setAccountNumber(UUID.randomUUID()
-                .toString()
-                .substring(0, 10)
-                .toUpperCase()
-        );
-        account.setBalance(request.getInitialDeposit());
-        account.setUserId(request.getUserId());
-        account.setAccountType(request.getAccountType());
+        AccountFactory factory=accountFactoryProvider.getFactory(request.getAccountType());
+        Account account=factory.createAccount(request);
         accountRepo.save(account);
 
         accountEventProducer.publishAccountCreated(
