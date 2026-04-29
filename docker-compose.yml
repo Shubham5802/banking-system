@@ -7,15 +7,26 @@ services:
       MYSQL_DATABASE: banking_db
     ports:
       - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7.0
     container_name: banking-redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   api-gateway:
     image: api-gateway:latest
+    build: ./api-gateway
     container_name: banking-api-gateway
     ports:
       - "8080:8080"
@@ -24,13 +35,17 @@ services:
       ACCOUNT_SERVICE_URL: http://account-service:8082
       TRANSACTION_SERVICE_URL: http://transaction-service:8083
     depends_on:
-      - user-service
-      - account-service
-      - transaction-service
+      user-service:
+        condition: service_started
+      account-service:
+        condition: service_started
+      transaction-service:
+        condition: service_started
 
 
   transaction-service:
     restart: on-failure
+    build: ./transaction-service
     image: transaction-service:latest
     container_name: banking-transaction-service
     ports:
@@ -42,15 +57,19 @@ services:
      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
      ACCOUNT_SERVICE_URL: http://account-service:8082
     depends_on:
-      - mysql
-      - kafka
-      - account-service
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      account-service:
+        condition: service_started
 
 
 
 
   account-service:
     restart: on-failure
+    build: ./account-service
     image: account-service:latest
     container_name: banking-account-service
     ports:
@@ -62,12 +81,16 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       USER_SERVICE_URL: http://user-service:8081
     depends_on:
-      - mysql
-      - kafka
-      - user-service
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      user-service:
+        condition: service_started
 
   user-service:
     restart: on-failure
+    build: ./user-service
     image: user-service:latest
     container_name: banking-user-service
     ports:
@@ -79,9 +102,12 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
-      - mysql
-      - redis
-      - kafka
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -106,3 +132,8 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
