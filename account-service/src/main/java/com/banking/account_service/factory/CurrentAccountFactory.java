@@ -11,6 +11,7 @@ public class CurrentAccountFactory implements AccountFactory{
 
     @Override
     public Account createAccount(CreateAccountRequest request) {
+        System.out.println("CurrentAccountFactory");
         Account account=new Account();
         account.setAccountNumber(UUID.randomUUID().toString().substring(0,10).toUpperCase());
         account.setUserId(request.getUserId());

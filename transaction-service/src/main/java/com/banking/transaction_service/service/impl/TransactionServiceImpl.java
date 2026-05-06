@@ -9,6 +9,8 @@ import com.banking.transaction_service.entity.TransactionTypes;
 import com.banking.transaction_service.kafka.TransactionEventProducer;
 import com.banking.transaction_service.repository.TransactionRepo;
 import com.banking.transaction_service.service.TransactionService;
+import com.banking.transaction_service.strategy.FeeCalculationStrategy;
+import com.banking.transaction_service.strategy.FeeStrategyProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -27,29 +29,38 @@ public class TransactionServiceImpl implements TransactionService {
     @Autowired
     AccountClient accountClient;
 
+    @Autowired
+    FeeStrategyProvider feeStrategyProvider;
+
     @Override
     public TransactionResponse initiateTransfer(TransferRequest request) {
         // validate both accounts exist
         Account fromAccount=accountClient.getAccount(request.getFromAccountNumber());
         Account toAccount=accountClient.getAccount(request.getToAccountNumber());
 
-        if(fromAccount.getBalance().doubleValue()< request.getAmount()){
+        FeeCalculationStrategy strategy=feeStrategyProvider.getStrategy(fromAccount.getAccountType());
+        Double fee= strategy.calculateFee(request.getAmount());
+
+        if(fromAccount.getBalance().doubleValue()< request.getAmount()+fee){
             throw new RuntimeException("Insufficient Balance");
         }
 
-        // save transaction as PENDING
-        Transaction transaction=new Transaction();
-        transaction.setFromAccountId(request.getFromAccountNumber());
-        transaction.setToAccountId(request.getToAccountNumber());
-        transaction.setAmount(request.getAmount());
-        transaction.setType(TransactionTypes.TRANSFER);
-        transaction.setStatus("PENDING");
+        Transaction transaction=Transaction.builder()
+                .fromAccountId(request.getFromAccountNumber())
+                .toAccountId(request.getToAccountNumber())
+                .amount(request.getAmount())
+                .type(TransactionTypes.TRANSFER)
+                .transactionFee(fee)
+                .status("PENDING")
+                .build();
+
         transactionRepo.save(transaction);
 
         // kick off saga — publish debit request
+        double totalDebit=request.getAmount()+fee;
         String debitMsg="transactionId="+ transaction.getId()
                 + ",fromAccount=" + request.getFromAccountNumber()
-                + ",amount=" + request.getAmount();
+                + ",amount=" + totalDebit;
 
         producer.publishDebitRequest(debitMsg);
 
@@ -75,6 +86,7 @@ public class TransactionServiceImpl implements TransactionService {
         response.setType(t.getType());
         response.setStatus(t.getStatus());
         response.setTimestamp(t.getTimestamp());
+        response.setTransactionFee(t.getTransactionFee());
         return response;
     }
 }

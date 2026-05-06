@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 public class AccountFactoryProvider {
 
     public AccountFactory getFactory(AccountType type){
+        System.out.println("AccountFactoryProvider");
         return switch (type){
             case SAVINGS -> new SavingsAccountFactory();
             case CURRENT -> new CurrentAccountFactory();

@@ -22,8 +22,8 @@ public class AccountController {
     AccountService accountService;
 
     @PostMapping("/create")
-    public ResponseEntity<String> createAccount(@Valid @RequestBody CreateAccountRequest request){
-        String status= accountService.createAccount(request);
+    public ResponseEntity<Account> createAccount(@Valid @RequestBody CreateAccountRequest request){
+        Account status= accountService.createAccount(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(status);
     }
 

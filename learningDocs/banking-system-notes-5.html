@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Banking System - Learning Document 5</title>
+    <style>
+        body {
+            font-family: Calibri, Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            margin: 60px;
+            color: #1a1a1a;
+        }
+        h1 {
+            font-size: 26pt;
+            color: #1a3c6e;
+            border-bottom: 3px solid #1a3c6e;
+            padding-bottom: 8px;
+        }
+        h2 {
+            font-size: 18pt;
+            color: #1a3c6e;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 4px;
+            margin-top: 36px;
+        }
+        h3 {
+            font-size: 14pt;
+            color: #2e6da4;
+            margin-top: 24px;
+        }
+        h4 {
+            font-size: 12pt;
+            color: #444;
+            margin-top: 16px;
+            margin-bottom: 4px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            border-left: 4px solid #2e6da4;
+            padding: 12px 16px;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        code {
+            background-color: #f0f0f0;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+        th {
+            background-color: #1a3c6e;
+            color: white;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        td {
+            border: 1px solid #ccc;
+            padding: 8px 12px;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .note {
+            background-color: #fff8dc;
+            border-left: 4px solid #f0c040;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        .important {
+            background-color: #e8f0fe;
+            border-left: 4px solid #2e6da4;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        .warning {
+            background-color: #fdecea;
+            border-left: 4px solid #c0392b;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        ul {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+        li {
+            margin-bottom: 4px;
+        }
+        .toc a {
+            color: #2e6da4;
+            text-decoration: none;
+        }
+        .subtitle {
+            color: #555;
+            font-size: 13pt;
+            margin-top: -10px;
+            margin-bottom: 30px;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Banking System &mdash; Learning Document 5</h1>
+<p class="subtitle">React Frontend | Vite | Tailwind CSS v4 | React Router | Axios | JWT Decode<br/>
+Written for: Shubham (6 years Java &mdash; JDBC, JSP, Spring MVC)<br/>
+Date: April 2026 &mdash; Continues from Document 4 (API Gateway, Docker Compose)</p>
+
+<hr/>
+
+<h2>What was built in this document</h2>
+<p>Document 4 ended after the API Gateway and full Docker Compose setup. This document covers the complete React frontend built on top of all four microservices:</p>
+<ol>
+    <li><strong>Login Page</strong> &mdash; split-screen layout, JWT stored in localStorage, error handling</li>
+    <li><strong>Dashboard Page</strong> &mdash; account cards fetched via API Gateway, transaction history, transfer form</li>
+    <li><strong>React Router</strong> &mdash; client-side routing with protected routes</li>
+    <li><strong>Axios Instance</strong> &mdash; centralized HTTP client with JWT interceptor</li>
+    <li><strong>Component Architecture</strong> &mdash; Navbar, ProtectedRoute, TransferForm as reusable components</li>
+</ol>
+
+<hr/>
+
+<h2>Table of Contents</h2>
+<div class="toc">
+<ol>
+    <li><a href="#concepts">Core React Concepts (mapped to Java/JSP knowledge)</a>
+        <ul>
+            <li>JSX vs JSP</li>
+            <li>useState &mdash; reactive variables</li>
+            <li>useEffect &mdash; lifecycle hooks</li>
+            <li>Props &mdash; passing data between components</li>
+            <li>Controlled inputs</li>
+        </ul>
+    </li>
+    <li><a href="#project-structure">Project Structure</a></li>
+    <li><a href="#setup">Setup &mdash; Vite + Tailwind v4</a></li>
+    <li><a href="#routing">Routing &mdash; main.jsx and App.jsx</a></li>
+    <li><a href="#services">Service Layer &mdash; axiosInstance, authService, accountService, transactionService</a></li>
+    <li><a href="#login">Login.jsx &mdash; Page</a></li>
+    <li><a href="#dashboard">Dashboard.jsx &mdash; Page</a></li>
+    <li><a href="#navbar">Navbar.jsx &mdash; Component</a></li>
+    <li><a href="#protected-route">ProtectedRoute.jsx &mdash; Component</a></li>
+    <li><a href="#transfer-form">TransferForm.jsx &mdash; Component</a></li>
+    <li><a href="#flows">End-to-End Request Flows</a></li>
+    <li><a href="#java-react-map">Java to React Mapping Table</a></li>
+</ol>
+</div>
+
+<hr/>
+
+<!-- ==================== CORE CONCEPTS ==================== -->
+<h2 id="concepts">1. Core React Concepts (mapped to Java/JSP knowledge)</h2>
+
+<h3>JSX vs JSP</h3>
+<p>JSX looks like HTML inside JavaScript. The key difference from JSP is that JSX runs in the browser &mdash; there is no server rendering. Every <code>&lt;div&gt;</code> you write in JSX becomes a browser DOM element directly.</p>
+<table>
+    <tr><th>JSP (Server-side)</th><th>JSX (Client-side)</th></tr>
+    <tr><td><code>&lt;%= user.getName() %&gt;</code></td><td><code>{user.name}</code></td></tr>
+    <tr><td><code>&lt;c:if test="${logged}"&gt;</code></td><td><code>{logged &amp;&amp; &lt;div&gt;...&lt;/div&gt;}</code></td></tr>
+    <tr><td><code>&lt;c:forEach items="${list}"&gt;</code></td><td><code>{list.map(item =&gt; &lt;div&gt;{item}&lt;/div&gt;)}</code></td></tr>
+</table>
+<div class="important"><strong>Key rule:</strong> Curly braces <code>{}</code> in JSX = run JavaScript. Everything else is treated as HTML.</div>
+
+<h3>useState &mdash; Reactive Variables</h3>
+<p>In a Servlet, instance variables don't trigger UI updates. In React, <code>useState</code> is a special variable that <strong>re-renders the component</strong> whenever it changes.</p>
+<pre>const [mail, setMail] = useState("")
+// mail     = current value (read)
+// setMail  = function to update it (write) — triggers re-render
+// ""       = initial value</pre>
+<div class="note"><strong>Java analogy:</strong> Think of it as a field with a setter that also calls <code>repaint()</code> &mdash; like Swing UI components.</div>
+
+<h3>useEffect &mdash; Lifecycle Hooks</h3>
+<p><code>useEffect</code> runs code after the component renders. The second argument (dependency array) controls when it re-runs.</p>
+<pre>useEffect(() =&gt; {
+    // runs once on mount — like @PostConstruct in Spring
+}, [])
+
+useEffect(() =&gt; {
+    // runs every time selectedAccount changes
+}, [selectedAccount])</pre>
+<div class="note"><strong>Java analogy:</strong> <code>useEffect(fn, [])</code> = <code>@PostConstruct</code>. <code>useEffect(fn, [x])</code> = a method that runs whenever <code>x</code> changes.</div>
+
+<h3>Props &mdash; Passing Data Between Components</h3>
+<p>Props are how parent components pass data to children. They are read-only inside the child.</p>
+<pre>// Parent passes data:
+&lt;TransferForm accounts={account} onTransferSuccess={handleRefresh} /&gt;
+
+// Child receives it:
+const TransferForm = ({ accounts, onTransferSuccess }) =&gt; { ... }</pre>
+<div class="note"><strong>Java analogy:</strong> Props are method parameters. <code>&lt;TransferForm accounts={x} /&gt;</code> is like calling <code>new TransferForm(accounts)</code>.</div>
+
+<h3>Controlled Inputs</h3>
+<p>In JSP, you read form data only on submit via <code>request.getParameter()</code>. In React, every keystroke updates state &mdash; the input is always in sync with React state.</p>
+<pre>&lt;input
+    value={mail}                              // React state drives what's shown
+    onChange={(e) =&gt; setMail(e.target.value)} // every keystroke updates state
+/&gt;</pre>
+
+<h3>The &amp;&amp; Guard Pattern</h3>
+<p>Used everywhere in React JSX to conditionally render elements:</p>
+<pre>{error &amp;&amp; &lt;p className="text-red-500"&gt;{error}&lt;/p&gt;}
+// If error is empty string ("") → renders nothing
+// If error has a value → renders the &lt;p&gt; tag</pre>
+
+<hr/>
+
+<!-- ==================== PROJECT STRUCTURE ==================== -->
+<h2 id="project-structure">2. Project Structure</h2>
+<pre>banking-frontend/
+├── public/
+├── src/
+│   ├── assets/
+│   ├── components/              ← reusable UI pieces
+│   │   ├── Navbar.jsx
+│   │   ├── ProtectedRoute.jsx
+│   │   └── TransferForm.jsx
+│   ├── pages/                   ← one file per screen
+│   │   ├── Login.jsx
+│   │   └── Dashboard.jsx
+│   ├── services/                ← all API call logic (like @Service in Spring)
+│   │   ├── axiosInstance.js
+│   │   ├── authService.js
+│   │   ├── accountService.js
+│   │   └── transactionService.js
+│   ├── App.jsx                  ← routing setup only
+│   ├── main.jsx                 ← entry point (like web.xml)
+│   └── index.css                ← Tailwind import
+├── index.html
+├── vite.config.js
+└── package.json</pre>
+<div class="note"><strong>Java analogy:</strong> <code>pages/</code> = Controllers, <code>services/</code> = Service layer, <code>components/</code> = reusable JSP fragments/includes.</div>
+
+<hr/>
+
+<!-- ==================== SETUP ==================== -->
+<h2 id="setup">3. Setup &mdash; Vite + Tailwind CSS v4</h2>
+
+<h3>Why Vite instead of Create React App?</h3>
+<p>Vite is a modern build tool that starts the dev server almost instantly. Create React App (CRA) is older and much slower. Vite is the current standard.</p>
+
+<h3>Tailwind CSS v4 Setup</h3>
+<p>Tailwind v4 is different from v3. It uses a Vite plugin instead of PostCSS. No <code>tailwind.config.js</code> needed &mdash; content scanning is automatic.</p>
+
+<h4>Installation</h4>
+<pre>npm install tailwindcss @tailwindcss/vite</pre>
+
+<h4>vite.config.js</h4>
+<pre>import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+    plugins: [react(), tailwindcss()],
+})</pre>
+
+<h4>index.css (single line &mdash; replaces 3 directives from v3)</h4>
+<pre>@import "tailwindcss";</pre>
+
+<h3>Other dependencies installed</h3>
+<pre>npm install react-router-dom   # client-side routing
+npm install axios              # HTTP client
+npm install lucide-react       # icon library (Eye, EyeOff icons)</pre>
+
+<hr/>
+
+<!-- ==================== ROUTING ==================== -->
+<h2 id="routing">4. Routing &mdash; main.jsx and App.jsx</h2>
+
+<h3>How React Router works</h3>
+<p>React Router handles URL navigation entirely in the browser &mdash; no server request is made when navigating between pages. This is called a Single Page Application (SPA).</p>
+<div class="note"><strong>Java analogy:</strong> Spring MVC's <code>DispatcherServlet</code> maps URLs to controllers on the server. React Router does the same thing in the browser.</div>
+
+<h3>main.jsx &mdash; Entry Point</h3>
+<p>This is the application entry point. It mounts the React app onto the HTML page and wraps everything in <code>BrowserRouter</code> to enable routing.</p>
+<pre>import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+import './index.css'
+import App from './App.jsx'
+
+createRoot(document.getElementById('root')).render(
+    &lt;BrowserRouter&gt;
+        &lt;App /&gt;
+    &lt;/BrowserRouter&gt;
+)</pre>
+<div class="note"><strong>Java analogy:</strong> <code>main.jsx</code> = <code>web.xml</code>. <code>BrowserRouter</code> = <code>DispatcherServlet</code> registration.</div>
+
+<h3>App.jsx &mdash; Route Definitions</h3>
+<p>App.jsx defines which component renders for each URL path. The dashboard route is wrapped in <code>ProtectedRoute</code> to block unauthenticated access.</p>
+<pre>import { Routes, Route } from "react-router-dom"
+import Login from "./pages/Login"
+import Dashboard from "./pages/Dashboard"
+import ProtectedRoute from "./components/ProtectedRoute"
+
+function App() {
+    return (
+        &lt;Routes&gt;
+            &lt;Route path="/" element={&lt;Login /&gt;} /&gt;
+            &lt;Route path="/dashboard" element={
+                &lt;ProtectedRoute&gt;
+                    &lt;Dashboard /&gt;
+                &lt;/ProtectedRoute&gt;
+            } /&gt;
+        &lt;/Routes&gt;
+    )
+}
+export default App</pre>
+
+<hr/>
+
+<!-- ==================== SERVICE LAYER ==================== -->
+<h2 id="services">5. Service Layer</h2>
+
+<h3>axiosInstance.js &mdash; Centralized HTTP Client</h3>
+<p>Instead of writing the base URL and Authorization header in every API call, a single axios instance is created with these configured once. An <strong>interceptor</strong> automatically attaches the JWT token to every outgoing request.</p>
+<pre>import axios from "axios"
+
+const axiosInstance = axios.create({
+    baseURL: "http://localhost:8080"  // API Gateway
+})
+
+// runs before every request — attaches JWT
+axiosInstance.interceptors.request.use((config) =&gt; {
+    const token = localStorage.getItem("token")
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+})
+
+export default axiosInstance</pre>
+<div class="note"><strong>Java analogy:</strong> The interceptor = Spring's <code>OncePerRequestFilter</code> or <code>HandlerInterceptor</code>. Configured once, runs on every request.</div>
+<div class="important"><strong>Why not use plain axios?</strong> Plain axios has no baseURL and no token. Using <code>axiosInstance</code> everywhere means if the base URL or auth strategy changes, you update it in one place only.</div>
+<div class="note"><strong>Fetch vs Axios:</strong> <code>fetch</code> is built into the browser but requires manual <code>.json()</code>/.text() calls, manual header setup every time, and does NOT throw on 4xx/5xx errors. Axios auto-parses JSON, auto-throws on errors, and supports interceptors. For real projects, axios is preferred.</div>
+
+<h3>authService.js</h3>
+<p>Handles login. Uses plain <code>axios</code> (not axiosInstance) because no token exists yet at login time. The API returns a plain JWT string, so <code>response.data</code> is the token directly.</p>
+<pre>import axios from "axios"
+
+export const loginUser = async (mail, password) =&gt; {
+    const response = await axios.post("http://localhost:8080/api/users/login", { mail, password })
+    return response.data  // JWT string
+}</pre>
+
+<h3>accountService.js</h3>
+<p>Fetches accounts for a user. Also contains the JWT decoder utility used to extract <code>userId</code> from the token stored in localStorage.</p>
+<pre>import axiosInstance from "./axiosInstance"
+
+// Decodes JWT payload to extract userId claim
+export const getUserIdFromToken = (token) =&gt; {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.userId
+}
+// token.split('.')[1]  → extracts the payload part (middle of 3 JWT segments)
+// atob(...)            → Base64 decode → JSON string  (like Base64.getDecoder() in Java)
+// JSON.parse(...)      → converts to JS object        (like ObjectMapper.readValue() in Java)
+
+export const getAccounts = async (userId) =&gt; {
+    const response = await axiosInstance.get(`/api/accounts/${userId}`)
+    return response.data  // array of account objects
+}</pre>
+
+<h3>transactionService.js</h3>
+<p>Handles transaction history fetch and money transfer.</p>
+<pre>import axiosInstance from "./axiosInstance"
+
+export const getTransactionHistory = async (accountNumber) =&gt; {
+    const response = await axiosInstance.get(`/api/transactions/history/${accountNumber}`)
+    return response.data  // array of TransactionResponse objects
+}
+
+export const transferMoney = async (fromAccountNumber, toAccountNumber, amount) =&gt; {
+    const response = await axiosInstance.post('/api/transactions/transfer', {
+        fromAccountNumber,
+        toAccountNumber,
+        amount
+    })
+    return response.data
+}</pre>
+
+<hr/>
+
+<!-- ==================== LOGIN ==================== -->
+<h2 id="login">6. Login.jsx &mdash; Page</h2>
+
+<h3>Layout</h3>
+<p>Split-screen layout: left half is a dark branding panel, right half contains the login form. Achieved with Tailwind's <code>flex</code> and <code>w-1/2</code>.</p>
+
+<h3>State variables</h3>
+<table>
+    <tr><th>Variable</th><th>Purpose</th></tr>
+    <tr><td><code>mail</code></td><td>Controlled input — tracks email field value</td></tr>
+    <tr><td><code>password</code></td><td>Controlled input — tracks password field value</td></tr>
+    <tr><td><code>showPassword</code></td><td>Boolean — toggles password input type between "text" and "password"</td></tr>
+    <tr><td><code>loading</code></td><td>Boolean — disables button and changes text during API call</td></tr>
+    <tr><td><code>error</code></td><td>String — displays red error message on failed login, cleared on typing</td></tr>
+</table>
+
+<h3>handleLogin flow</h3>
+<pre>const handleLogin = async (e) =&gt; {
+    e.preventDefault()        // prevent default form browser submit
+    setLoading(true)
+    try {
+        const token = await loginUser(mail, password)  // POST /api/users/login
+        localStorage.setItem("token", token)           // persist JWT
+        navigate("/dashboard")                         // redirect
+    } catch (error) {
+        setError("Invalid credentials. Please try again.")
+    } finally {
+        setLoading(false)
+    }
+}</pre>
+
+<h3>Key JSX patterns used</h3>
+<pre>// Show/hide password toggle
+type={showPassword ? "text" : "password"}
+
+// Button disabled during loading
+disabled={loading}
+className="... disabled:bg-blue-300"
+{loading ? "Logging in..." : "Login"}
+
+// Error message — only shows when error state is non-empty
+{error &amp;&amp; &lt;p className="text-red-500 text-sm mt-2"&gt;{error}&lt;/p&gt;}
+
+// Clear error when user starts typing
+onChange={(e) =&gt; { setMail(e.target.value); setError("") }}</pre>
+
+<hr/>
+
+<!-- ==================== DASHBOARD ==================== -->
+<h2 id="dashboard">7. Dashboard.jsx &mdash; Page</h2>
+
+<h3>State variables</h3>
+<table>
+    <tr><th>Variable</th><th>Purpose</th></tr>
+    <tr><td><code>account</code></td><td>Array of account objects fetched from account-service</td></tr>
+    <tr><td><code>loading</code></td><td>Boolean — shows loading text while accounts are being fetched</td></tr>
+    <tr><td><code>selectedAccount</code></td><td>Account number string — set when user clicks "View" on a card</td></tr>
+    <tr><td><code>transactions</code></td><td>Array of transactions for the selected account</td></tr>
+    <tr><td><code>txnLoading</code></td><td>Boolean — shows loading text while transactions are being fetched</td></tr>
+</table>
+
+<h3>Two useEffect hooks</h3>
+<pre>// Effect 1: runs once on mount — fetches all accounts for logged-in user
+useEffect(() =&gt; {
+    const token = localStorage.getItem("token")
+    const userId = getUserIdFromToken(token)   // decode JWT to get userId
+    getAccounts(userId)
+        .then(data =&gt; { setAccount(data); setLoading(false) })
+        .catch(error =&gt; { console.error(error); setLoading(false) })
+}, [])
+
+// Effect 2: runs when selectedAccount changes — fetches transaction history
+useEffect(() =&gt; {
+    if (!selectedAccount) return       // guard — skip on initial render
+    setTxnLoading(true)
+    getTransactionHistory(selectedAccount)
+        .then(data =&gt; { setTransactions(data); setTxnLoading(false) })
+        .catch(error =&gt; console.error(error))
+}, [selectedAccount])</pre>
+
+<h3>onTransferSuccess callback</h3>
+<p>After a successful transfer, both accounts and transaction history are re-fetched to reflect updated balances:</p>
+<pre>onTransferSuccess={() =&gt; {
+    const token = localStorage.getItem("token")
+    const userId = getUserIdFromToken(token)
+    getAccounts(userId).then(data =&gt; setAccount(data))
+    if (selectedAccount) {
+        getTransactionHistory(selectedAccount).then(data =&gt; setTransactions(data))
+    }
+}}</pre>
+
+<hr/>
+
+<!-- ==================== NAVBAR ==================== -->
+<h2 id="navbar">8. Navbar.jsx &mdash; Component</h2>
+<p>A reusable top navigation bar. Contains the bank name and a logout button. Uses <code>useNavigate</code> to redirect to login after clearing the token.</p>
+<pre>import { useNavigate } from "react-router-dom"
+
+const Navbar = () =&gt; {
+    const navigate = useNavigate()
+    const handleLogout = () =&gt; {
+        localStorage.removeItem("token")   // clear JWT
+        navigate("/")                       // redirect to login
+    }
+    return (
+        &lt;nav className="bg-gray-900 flex justify-between items-center px-8 py-4"&gt;
+            &lt;div className="text-white font-bold text-xl"&gt;SecureBank&lt;/div&gt;
+            &lt;button onClick={handleLogout}
+                className="text-white border border-white px-4 py-1 rounded-lg hover:bg-white hover:text-gray-900"&gt;
+                Logout
+            &lt;/button&gt;
+        &lt;/nav&gt;
+    )
+}
+export default Navbar</pre>
+<div class="note"><strong>Java analogy:</strong> A reusable JSP <code>&lt;jsp:include&gt;</code> fragment that appears on every page.</div>
+
+<hr/>
+
+<!-- ==================== PROTECTED ROUTE ==================== -->
+<h2 id="protected-route">9. ProtectedRoute.jsx &mdash; Component</h2>
+<p>Wraps private pages. Checks if a JWT exists in localStorage before rendering the page. If no token, redirects to the login page.</p>
+<pre>import { Navigate } from "react-router-dom"
+
+const ProtectedRoute = ({ children }) =&gt; {
+    const token = localStorage.getItem("token")
+    return token ? children : &lt;Navigate to="/" /&gt;
+}
+export default ProtectedRoute</pre>
+<div class="important">
+    <strong>How it works:</strong>
+    <ul>
+        <li><code>children</code> = whatever is wrapped inside <code>&lt;ProtectedRoute&gt;</code> &mdash; in this case <code>&lt;Dashboard /&gt;</code></li>
+        <li>If token exists → render <code>children</code> (the Dashboard)</li>
+        <li>If no token → <code>&lt;Navigate to="/" /&gt;</code> redirects to login immediately</li>
+    </ul>
+</div>
+<div class="note"><strong>Java analogy:</strong> Spring Security's filter chain. If the user is not authenticated, redirect to <code>/login</code> before the controller runs.</div>
+
+<hr/>
+
+<!-- ==================== TRANSFER FORM ==================== -->
+<h2 id="transfer-form">10. TransferForm.jsx &mdash; Component</h2>
+
+<h3>Props received</h3>
+<table>
+    <tr><th>Prop</th><th>Type</th><th>Purpose</th></tr>
+    <tr><td><code>accounts</code></td><td>Array</td><td>User's accounts — used to populate the "From Account" dropdown</td></tr>
+    <tr><td><code>onTransferSuccess</code></td><td>Function</td><td>Callback to Dashboard to refresh balances after transfer</td></tr>
+</table>
+
+<h3>State variables</h3>
+<table>
+    <tr><th>Variable</th><th>Purpose</th></tr>
+    <tr><td><code>form</code></td><td>Object with <code>fromAccountNumber</code>, <code>toAccountNumber</code>, <code>amount</code></td></tr>
+    <tr><td><code>error</code></td><td>Error message shown on failed transfer</td></tr>
+    <tr><td><code>loading</code></td><td>Disables button during API call</td></tr>
+</table>
+
+<h3>Spread operator for updating nested state</h3>
+<p>Since <code>form</code> is an object (not a simple string), updating one field requires copying all other fields first:</p>
+<pre>// Update only fromAccountNumber, keep other fields unchanged
+setForm({ ...form, fromAccountNumber: e.target.value })
+
+// ...form  spreads all existing fields: toAccountNumber, amount
+// then fromAccountNumber overrides just that one field</pre>
+<div class="note"><strong>Java analogy:</strong> Like <code>BeanUtils.copyProperties(source, target)</code> then setting one specific field on target.</div>
+
+<h3>handleTransfer flow</h3>
+<pre>const handleTransfer = async (e) =&gt; {
+    e.preventDefault()
+    setLoading(true)
+    try {
+        await transferMoney(form.fromAccountNumber, form.toAccountNumber, Number(form.amount))
+        onTransferSuccess()                                              // refresh parent
+        setForm({ fromAccountNumber: "", toAccountNumber: "", amount: "" }) // reset form
+    } catch (error) {
+        setError("Transfer Failed. Please try again.")
+    } finally {
+        setLoading(false)
+    }
+}</pre>
+
+<hr/>
+
+<!-- ==================== FLOWS ==================== -->
+<h2 id="flows">11. End-to-End Request Flows</h2>
+
+<h3>Login Flow</h3>
+<pre>User enters email + password → clicks Login
+  → handleLogin() called
+  → POST http://localhost:8080/api/users/login  { mail, password }
+  → API Gateway routes to user-service:8081
+  → user-service validates credentials, returns JWT string
+  → JWT stored in localStorage
+  → navigate("/dashboard")
+  → ProtectedRoute checks localStorage → token exists → Dashboard renders</pre>
+
+<h3>Dashboard Load Flow</h3>
+<pre>Dashboard mounts
+  → useEffect (deps: []) fires
+  → getUserIdFromToken(token) decodes JWT → extracts userId
+  → GET http://localhost:8080/api/accounts/{userId}
+  → API Gateway validates JWT, routes to account-service:8082
+  → account-service returns array of accounts
+  → setAccount(data) → account cards rendered</pre>
+
+<h3>Transaction History Flow</h3>
+<pre>User clicks "View" on an account card
+  → setSelectedAccount(acc.accountNumber)
+  → useEffect (deps: [selectedAccount]) fires
+  → GET http://localhost:8080/api/transactions/history/{accountNumber}
+  → API Gateway validates JWT, routes to transaction-service:8083
+  → transactions array returned → rendered below the cards</pre>
+
+<h3>Transfer Flow</h3>
+<pre>User fills TransferForm → clicks Transfer
+  → handleTransfer() called
+  → POST http://localhost:8080/api/transactions/transfer
+      { fromAccountNumber, toAccountNumber, amount }
+  → API Gateway validates JWT, routes to transaction-service:8083
+  → transaction-service processes transfer (Saga pattern)
+  → onTransferSuccess() callback fires
+  → accounts and transactions re-fetched → UI updates</pre>
+
+<h3>Logout Flow</h3>
+<pre>User clicks Logout in Navbar
+  → handleLogout() called
+  → localStorage.removeItem("token")
+  → navigate("/")
+  → Login page renders
+  → If user tries to visit /dashboard → ProtectedRoute finds no token → redirects to /</pre>
+
+<hr/>
+
+<!-- ==================== JAVA REACT MAP ==================== -->
+<h2 id="java-react-map">12. Java to React Mapping Table</h2>
+<table>
+    <tr><th>Java / Spring Concept</th><th>React Equivalent</th></tr>
+    <tr><td><code>web.xml</code> / application entry</td><td><code>main.jsx</code></td></tr>
+    <tr><td><code>DispatcherServlet</code> URL mapping</td><td><code>App.jsx</code> with <code>&lt;Routes&gt;</code></td></tr>
+    <tr><td><code>@Controller</code> / JSP page</td><td><code>pages/</code> folder (Login.jsx, Dashboard.jsx)</td></tr>
+    <tr><td>Reusable JSP <code>&lt;jsp:include&gt;</code></td><td><code>components/</code> folder (Navbar, TransferForm)</td></tr>
+    <tr><td><code>@Service</code> class</td><td><code>services/</code> folder (authService.js, etc.)</td></tr>
+    <tr><td><code>OncePerRequestFilter</code></td><td>Axios interceptor in axiosInstance.js</td></tr>
+    <tr><td>Spring Security filter (auth check)</td><td><code>ProtectedRoute.jsx</code></td></tr>
+    <tr><td><code>HttpSession</code></td><td><code>localStorage</code></td></tr>
+    <tr><td><code>request.getParameter("mail")</code></td><td>Controlled input with <code>useState</code></td></tr>
+    <tr><td><code>@PostConstruct</code></td><td><code>useEffect(() =&gt; {...}, [])</code></td></tr>
+    <tr><td>Method parameters</td><td>Props passed to components</td></tr>
+    <tr><td><code>Base64.getDecoder().decode()</code></td><td><code>atob()</code></td></tr>
+    <tr><td><code>ObjectMapper.readValue()</code></td><td><code>JSON.parse()</code></td></tr>
+    <tr><td><code>response.setHeader("Authorization",...)</code></td><td>Axios interceptor sets <code>config.headers.Authorization</code></td></tr>
+</table>
+
+<hr/>
+
+<h2>Key Lessons Learned</h2>
+<ul>
+    <li><strong>Tailwind v4</strong> uses a Vite plugin &mdash; no <code>tailwind.config.js</code>, no PostCSS. Just <code>@import "tailwindcss"</code> in CSS.</li>
+    <li><strong>Controlled inputs</strong> require both <code>value</code> and <code>onChange</code> &mdash; without both, React can't track the input.</li>
+    <li><strong>fetch vs axios:</strong> axios is preferred for real projects &mdash; auto JSON parsing, auto error throwing, interceptors.</li>
+    <li><strong>Component naming must be capitalized</strong> &mdash; <code>transferForm</code> is treated as an HTML element; <code>TransferForm</code> is a React component.</li>
+    <li><strong>File names should match component names</strong> &mdash; works on Windows (case-insensitive) but crashes on Linux (case-sensitive) if mismatched.</li>
+    <li><strong>The spread operator</strong> <code>{...form, field: value}</code> is the standard way to update one field in a state object.</li>
+    <li><strong>JWT is not encrypted</strong> &mdash; the payload is Base64 encoded and readable by anyone. Never store sensitive data in JWT claims beyond what's necessary.</li>
+    <li><strong>ProtectedRoute</strong> is a client-side guard only &mdash; the real security is the API Gateway rejecting requests with invalid/missing tokens.</li>
+</ul>
+
+</body>
+</html>

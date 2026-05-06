@@ -83,13 +83,34 @@ const Dashboard = () => {
                           {txnLoading && <p>  Loading Transaction...</p>}
                           {
                             transactions.map((txn) => (
-                              <div key={txn.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 mb-3">
-                                  <p className="text-sm text-gray-500">{txn.type}</p>
-                                  <p className="text-sm text-gray-500">{txn.fromAccountNumber}</p>
-                                  <p className="text-sm text-gray-500">{txn.toAccountNumber}</p>
-                                  <p className="text-sm text-gray-500">{txn.status}</p>
-                                  <p className="font-semibold text-gray-800">₹{txn.amount}</p>
-                                  <p className="text-xs text-gray-400">{txn.timestamp}</p>
+                              <div key={txn.id} className="bg-white rounded-lg shadow-sm border border-gray-100 mb-3 overflow-hidden">
+                                  <div className="flex justify-between items-center px-4 py-3 border-b border-gray-100">
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                      {txn.type}
+                                    </span>
+                                    <span className="text-xs text-gray-500">{new Date(txn.timestamp).toLocaleString()}</span>
+                                    <span className={`text-xs font-semibold px-2 py-1 rounded ${txn.status === 'SUCCESS' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>
+                                      {txn.status}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-4 gap-4 px-4 py-3">
+                                    <div>
+                                      <p className="text-xs text-gray-500 mb-1">From</p>
+                                      <p className="text-sm font-semibold text-gray-800">{txn.fromAccountNumber}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-500 mb-1">To</p>
+                                      <p className="text-sm font-semibold text-gray-800">{txn.toAccountNumber}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-500 mb-1">Amount</p>
+                                      <p className="text-sm font-bold text-blue-600">₹{txn.amount}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-gray-500 mb-1">Fee</p>
+                                      <p className="text-sm font-semibold text-gray-800">₹{txn.transactionFee}</p>
+                                    </div>
+                                  </div>
                               </div>
                             ))
                           }

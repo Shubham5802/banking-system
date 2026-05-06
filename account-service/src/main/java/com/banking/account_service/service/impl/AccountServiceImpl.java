@@ -36,7 +36,7 @@ public class AccountServiceImpl implements AccountService {
     AccountFactoryProvider accountFactoryProvider;
 
     @Override
-    public String createAccount(CreateAccountRequest request) {
+    public Account createAccount(CreateAccountRequest request) {
 
         //check if userId is valid
         userClient.getUserById(request.getUserId());
@@ -49,7 +49,7 @@ public class AccountServiceImpl implements AccountService {
                 "userId=" + request.getUserId() + ", account=" + account.getAccountNumber()
         );
 
-        return "account created";
+        return account;
     }
 
     @Override

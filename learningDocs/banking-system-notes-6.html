@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Banking System - Learning Document 6</title>
+    <style>
+        body {
+            font-family: Calibri, Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            margin: 60px;
+            color: #1a1a1a;
+        }
+        h1 {
+            font-size: 26pt;
+            color: #1a3c6e;
+            border-bottom: 3px solid #1a3c6e;
+            padding-bottom: 8px;
+        }
+        h2 {
+            font-size: 18pt;
+            color: #1a3c6e;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 4px;
+            margin-top: 36px;
+        }
+        h3 {
+            font-size: 14pt;
+            color: #2e6da4;
+            margin-top: 24px;
+        }
+        h4 {
+            font-size: 12pt;
+            color: #444;
+            margin-top: 16px;
+            margin-bottom: 4px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            border-left: 4px solid #2e6da4;
+            padding: 12px 16px;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        code {
+            background-color: #f0f0f0;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+        }
+        th {
+            background-color: #1a3c6e;
+            color: white;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        td {
+            border: 1px solid #ccc;
+            padding: 8px 12px;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .note {
+            background-color: #fff8dc;
+            border-left: 4px solid #f0c040;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        .important {
+            background-color: #e8f0fe;
+            border-left: 4px solid #2e6da4;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        .warning {
+            background-color: #fdecea;
+            border-left: 4px solid #c0392b;
+            padding: 10px 16px;
+            margin: 12px 0;
+        }
+        ul {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+        li {
+            margin-bottom: 4px;
+        }
+        .toc a {
+            color: #2e6da4;
+            text-decoration: none;
+        }
+        .subtitle {
+            color: #555;
+            font-size: 13pt;
+            margin-top: -10px;
+            margin-bottom: 30px;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Banking System &mdash; Learning Document 6</h1>
+<p class="subtitle">userId in JWT | Docker (Multi-Stage Builds, .dockerignore, Healthchecks)<br/>
+Written for: Shubham (6 years Java &mdash; JDBC, JSP, Spring MVC)<br/>
+Date: April 2026 &mdash; Continues from Document 5 (React Frontend)</p>
+
+<hr/>
+
+<h2>What was built since Document 5</h2>
+<p>Document 5 ended after the React frontend. Since then two areas were improved:</p>
+<ol>
+    <li><strong>userId added to JWT</strong> &mdash; the token now carries <code>userId</code> as a claim so the frontend can extract it directly without a separate API call</li>
+    <li><strong>Docker hardening</strong> &mdash; multi-stage Dockerfiles, <code>.dockerignore</code> files, healthchecks in docker-compose, <code>build:</code> context, <code>depends_on</code> conditions, and JVM container memory flag</li>
+</ol>
+
+<hr/>
+
+<h2>Table of Contents</h2>
+<div class="toc">
+<ol>
+    <li><a href="#jwt-userid">userId in JWT</a>
+        <ul>
+            <li>Why userId was added</li>
+            <li>JWT custom claims explained</li>
+            <li>Changes to user-service JwtUtil</li>
+            <li>Changes to UserServiceImpl</li>
+            <li>Changes to api-gateway JwtUtil</li>
+            <li>How the frontend uses it (accountService.js)</li>
+            <li>Why Integer.class not just Integer</li>
+        </ul>
+    </li>
+    <li><a href="#docker">Docker Hardening</a>
+        <ul>
+            <li>Kafka two-listener setup (9092 vs 9093)</li>
+            <li>Multi-stage Dockerfiles</li>
+            <li>.dockerignore</li>
+            <li>JVM container memory flag</li>
+            <li>docker-compose healthchecks</li>
+            <li>depends_on with conditions</li>
+            <li>build: context</li>
+        </ul>
+    </li>
+    <li><a href="#errors">Common Errors and Fixes (Phase 6)</a></li>
+</ol>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== JWT USERID ==================== -->
+<h2 id="jwt-userid">1. userId in JWT</h2>
+
+<h3>Why userId was added</h3>
+<p>In Document 5, the React frontend decoded the JWT to get the <code>userId</code>:</p>
+<pre>
+// accountService.js (old approach)
+export const getUserIdFromToken = (token) => {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.userId    // but userId was never actually IN the token!
+}
+</pre>
+<p>The old token only contained the email as <code>subject</code>. To get the <code>userId</code>, you had two bad options:</p>
+<ul>
+    <li>Make an extra API call from the frontend: <code>GET /api/users/byEmail?email=...</code> (extra network roundtrip)</li>
+    <li>Put <code>userId</code> directly in the token as a <strong>custom claim</strong> (correct approach)</li>
+</ul>
+<p>Adding <code>userId</code> as a JWT claim means the frontend can decode it locally &mdash; zero extra network calls, zero DB queries.</p>
+
+<h3>JWT custom claims explained</h3>
+<p>A JWT payload can carry any key-value pairs called <strong>claims</strong>. Standard claims are defined by the JWT spec (like <code>sub</code>, <code>iat</code>, <code>exp</code>). Custom claims are anything you add on top.</p>
+<pre>
+JWT Payload (before adding userId):
+{
+    "sub": "user@gmail.com",
+    "iat": 1714000000,
+    "exp": 1714086400
+}
+
+JWT Payload (after adding userId):
+{
+    "sub": "user@gmail.com",
+    "userId": 1,             ← custom claim
+    "iat": 1714000000,
+    "exp": 1714086400
+}
+</pre>
+<div class="important">
+<strong>JWT is not encrypted &mdash; it is Base64 encoded.</strong> Anyone who has the token can decode and read the payload.
+Never put sensitive data (passwords, credit card numbers) in JWT claims. <code>userId</code> and <code>email</code> are safe to include.
+</div>
+
+<h3>Changes to user-service JwtUtil</h3>
+
+<h4>generateToken &mdash; added userId parameter and claim</h4>
+<pre>
+// BEFORE
+public String generateToken(String email) {
+    return Jwts.builder()
+            .signWith(getSigningKey())
+            .subject(email)
+            .issuedAt(new Date())
+            .expiration(new Date(System.currentTimeMillis() + expiration))
+            .compact();
+}
+
+// AFTER
+public String generateToken(String email, Integer userId) {
+    return Jwts.builder()
+            .signWith(getSigningKey())
+            .subject(email)
+            .claim("userId", userId)       ← adds custom claim to payload
+            .issuedAt(new Date())
+            .expiration(new Date(System.currentTimeMillis() + expiration))
+            .compact();
+}
+</pre>
+<p><code>.claim("userId", userId)</code> adds any key-value pair to the JWT payload. The JJWT library serializes it into JSON and includes it in the signed token.</p>
+
+<h4>extractUserId &mdash; new method added</h4>
+<pre>
+public Integer extractUserId(String token) {
+    return getClaims(token).get("userId", Integer.class);
+}
+</pre>
+<p><code>getClaims(token).get("userId", Integer.class)</code> reads the <code>userId</code> key from the payload and casts it to <code>Integer</code>.
+The second argument <code>Integer.class</code> is a <code>Class</code> object &mdash; explained below.</p>
+
+<h3>Why Integer.class and not just Integer</h3>
+<p>The <code>get()</code> method signature is:</p>
+<pre>
+public &lt;T&gt; T get(String claimName, Class&lt;T&gt; requiredType)
+</pre>
+<p>It is a <strong>generic method</strong>. It needs the <code>Class</code> object at runtime to know what type to convert the value to.
+This is because Java generics use <strong>type erasure</strong> &mdash; at runtime, <code>&lt;T&gt;</code> becomes <code>Object</code>
+and the compiler's type information is gone. The only way to tell the method "I want an Integer" at runtime is to pass <code>Integer.class</code> explicitly.</p>
+
+<table>
+    <tr><th>What you write</th><th>What it is</th><th>When it exists</th></tr>
+    <tr><td><code>Integer</code></td><td>A type &mdash; tells the compiler what variable can hold</td><td>Compile time only &mdash; gone at runtime due to erasure</td></tr>
+    <tr><td><code>Integer.class</code></td><td>A <code>Class&lt;Integer&gt;</code> object you can pass around</td><td>Runtime &mdash; the method uses it to cast/convert the value</td></tr>
+</table>
+
+<div class="note">
+<strong>JDBC analogy:</strong> Similar to <code>rs.getObject("col", Integer.class)</code> in JDBC &mdash; you pass the class
+to tell the method what to convert the raw DB value into. Without it, you'd get back an <code>Object</code> and
+have to cast manually.
+</div>
+
+<h3>Changes to UserServiceImpl</h3>
+<p>The <code>login()</code> method already fetches the <code>user</code> object from the DB. The <code>user.getId()</code> is now passed to <code>generateToken</code>:</p>
+<pre>
+// BEFORE
+return jwtUtil.generateToken(request.getMail());
+
+// AFTER
+return jwtUtil.generateToken(request.getMail(), user.getId());
+// user object is already in scope from the findByMail() call above
+</pre>
+
+<h3>Changes to api-gateway JwtUtil</h3>
+<p>The gateway validates tokens but never generates them. <code>extractUserId</code> was added so the gateway can (optionally) forward the <code>userId</code> to downstream services as a header in the future:</p>
+<pre>
+public Integer extractUserId(String token) {
+    return getClaims(token).get("userId", Integer.class);
+}
+</pre>
+
+<h3>How the frontend uses it</h3>
+<p>In <code>accountService.js</code>, <code>getUserIdFromToken</code> now correctly reads the <code>userId</code> claim that is actually present in the token:</p>
+<pre>
+export const getUserIdFromToken = (token) => {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.userId    // ← userId claim is now actually in the token
+}
+</pre>
+<p>The decode logic is unchanged. The fix was on the backend &mdash; putting <code>userId</code> into the token so this frontend code works correctly.</p>
+
+<div class="page-break"></div>
+
+<!-- ==================== DOCKER ==================== -->
+<h2 id="docker">2. Docker Hardening</h2>
+
+<h3>Kafka two-listener setup (9092 vs 9093) &mdash; bug fix</h3>
+<p>All three services had <code>bootstrap-servers: localhost:9093</code> in their <code>application.yaml</code> files.
+This caused Kafka connection errors when running services locally (outside Docker).</p>
+
+<p>The reason for <strong>two ports</strong> in docker-compose is intentional:</p>
+<pre>
+KAFKA_LISTENERS:           INTERNAL://0.0.0.0:9092, EXTERNAL://0.0.0.0:9093
+KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,   EXTERNAL://localhost:9093
+</pre>
+
+<table>
+    <tr><th>Listener</th><th>Port</th><th>Who uses it</th><th>When</th></tr>
+    <tr><td>INTERNAL</td><td>9092</td><td>Spring Boot services inside Docker</td><td>docker-compose / K8s</td></tr>
+    <tr><td>EXTERNAL</td><td>9093</td><td>Host machine (IntelliJ, Postman)</td><td>Local dev outside Docker</td></tr>
+</table>
+
+<p>So <code>localhost:9093</code> in <code>application.yaml</code> is correct for local development (host machine connecting to Dockerized Kafka via the EXTERNAL listener).
+When running inside Docker, the env var <code>SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092</code> overrides it automatically.</p>
+
+<div class="important">
+<strong>Why both are needed:</strong> Inside Docker, <code>localhost</code> means the container itself &mdash; not the Kafka container.
+So Docker services use the INTERNAL listener at <code>kafka:9092</code> (hostname = service name).
+Your host machine uses <code>localhost:9093</code> which Docker maps to the EXTERNAL listener.
+</div>
+
+<h3>Multi-stage Dockerfiles</h3>
+<p>The original Dockerfiles were single-stage:</p>
+<pre>
+# OLD — single stage (requires pre-built JAR)
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY target/user-service-0.0.1-SNAPSHOT.jar app.jar
+ENTRYPOINT ["java", "-jar", "app.jar"]
+</pre>
+<p>This required you to run <code>mvn package</code> manually before every <code>docker build</code>. If you forgot, Docker would fail or use a stale JAR.</p>
+
+<p>The new Dockerfiles are <strong>multi-stage</strong> &mdash; Maven runs inside Docker:</p>
+<pre>
+# NEW — multi-stage (self-contained build)
+
+# Stage 1: Build the JAR inside Docker
+FROM maven:3.9-eclipse-temurin-21 AS builder
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline          ← download dependencies into a cached layer
+COPY src ./src
+RUN mvn package -DskipTests            ← compile and package
+
+# Stage 2: Run only the JAR (no Maven, no source code — smaller image)
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY --from=builder /app/target/user-service-0.0.1-SNAPSHOT.jar app.jar
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+</pre>
+
+<h4>Why two stages?</h4>
+<table>
+    <tr><th>Stage</th><th>Base image</th><th>Size</th><th>Purpose</th></tr>
+    <tr><td>builder</td><td>maven:3.9-eclipse-temurin-21</td><td>~500MB</td><td>Has Maven + JDK to compile the project</td></tr>
+    <tr><td>final</td><td>eclipse-temurin:21-jre</td><td>~180MB</td><td>Has only JRE to run the JAR &mdash; much smaller</td></tr>
+</table>
+<p>The final Docker image only contains the JRE + the JAR. The builder stage (with Maven, source code, etc.) is discarded. This keeps production images lean and secure.</p>
+
+<h4>Why pom.xml is copied first, before src/</h4>
+<p>Docker builds images in <strong>layers</strong>. Each instruction creates a new layer. Layers are cached &mdash; if nothing changed, Docker reuses the cached layer instead of re-running the step.</p>
+<pre>
+COPY pom.xml .                ← Layer A
+RUN mvn dependency:go-offline ← Layer B (cached as long as pom.xml doesn't change)
+COPY src ./src                ← Layer C
+RUN mvn package -DskipTests  ← Layer D (only reruns if src/ or pom.xml changed)
+</pre>
+<p>If you only change code in <code>src/</code>, Docker reuses Layer B (the expensive dependency download).
+If you had copied everything at once (<code>COPY . .</code>), any code change would invalidate all layers and
+re-download all dependencies every time.</p>
+
+<h3>.dockerignore</h3>
+<p>Without <code>.dockerignore</code>, Docker sends your entire project folder to the build daemon as the "build context" &mdash;
+including <code>target/</code> (compiled classes, ~50-100MB), <code>.idea/</code>, <code>.git/</code> history, etc.
+This slows down every build even if those files are never used.</p>
+
+<p>A <code>.dockerignore</code> file was created in each service folder with the same content:</p>
+<pre>
+target/
+.idea/
+*.iml
+.git/
+*.md
+.mvn/
+mvnw
+mvnw.cmd
+*.gitignore
+*.gitattributes
+</pre>
+
+<table>
+    <tr><th>Entry</th><th>What it excludes</th><th>Why</th></tr>
+    <tr><td><code>target/</code></td><td>Compiled classes, JARs</td><td>Largest folder; Docker builds its own JAR in Stage 1</td></tr>
+    <tr><td><code>.idea/</code></td><td>IntelliJ project files</td><td>IDE metadata — irrelevant to build</td></tr>
+    <tr><td><code>.git/</code></td><td>Git history</td><td>Can be large; not needed in container</td></tr>
+    <tr><td><code>.mvn/</code>, <code>mvnw</code>, <code>mvnw.cmd</code></td><td>Maven wrapper</td><td>Docker uses its own Maven from the base image</td></tr>
+</table>
+
+<div class="note">
+<strong>Result:</strong> Docker build context is now just <code>pom.xml</code> + <code>src/</code> &mdash;
+exactly what's needed and nothing more. Builds are faster and the daemon uses less memory.
+</div>
+
+<h3>JVM container memory flag</h3>
+<p>The ENTRYPOINT was updated in all Dockerfiles:</p>
+<pre>
+# BEFORE
+ENTRYPOINT ["java", "-jar", "app.jar"]
+
+# AFTER
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+</pre>
+
+<p><strong>The problem without this flag:</strong> The JVM looks at the host machine's total RAM to size the heap.
+If your machine has 16GB but you give the container only 512MB, the JVM still tries to allocate a heap
+sized for 16GB. Docker sees the container exceeding its memory limit and kills it with OOMKilled (Out of Memory).</p>
+
+<p><code>-XX:MaxRAMPercentage=75.0</code> tells the JVM: size the heap as 75% of the container's memory limit, not the host machine's total RAM.
+This flag is supported from Java 11 onwards and is the standard practice for running Java in containers.</p>
+
+<table>
+    <tr><th>Scenario</th><th>Without flag</th><th>With flag</th></tr>
+    <tr><td>Container memory limit: 512MB, Host RAM: 16GB</td><td>JVM allocates ~4GB heap → OOMKilled immediately</td><td>JVM allocates ~384MB heap → runs within limit</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h3>docker-compose healthchecks</h3>
+<p>Before healthchecks, <code>depends_on</code> only waited for containers to <strong>start</strong>, not to be <strong>ready</strong>.
+MySQL takes ~20-30 seconds after container start to accept connections. Spring Boot services would start,
+fail to connect to MySQL, and crash. <code>restart: on-failure</code> was a workaround &mdash; healthchecks are the proper solution.</p>
+
+<h4>MySQL healthcheck</h4>
+<pre>
+mysql:
+  image: mysql:8.0
+  ...
+  healthcheck:
+    test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+    interval: 10s    ← run this check every 10 seconds
+    timeout: 5s      ← fail if no response within 5 seconds
+    retries: 5       ← mark as unhealthy after 5 consecutive failures
+</pre>
+<p><code>mysqladmin ping</code> is a MySQL command that returns OK when the MySQL server is ready to accept connections.
+Docker runs this command inside the container every 10 seconds.</p>
+
+<h4>Redis healthcheck</h4>
+<pre>
+redis:
+  image: redis:7.0
+  ...
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+</pre>
+<p><code>redis-cli ping</code> sends a PING command to Redis. Redis responds with PONG when it is ready.
+Same pattern as MySQL &mdash; simple CLI command that confirms the service is accepting connections.</p>
+
+<h4>Kafka healthcheck</h4>
+<pre>
+kafka:
+  ...
+  healthcheck:
+    test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+    interval: 10s
+    timeout: 10s     ← longer timeout because Kafka startup is slower
+    retries: 5
+</pre>
+<p><code>kafka-broker-api-versions</code> is a Kafka CLI tool that connects to the broker and asks for its API version list.
+If Kafka is not ready, this command fails. If it succeeds, Kafka is accepting connections.</p>
+
+<h3>depends_on with conditions</h3>
+<p>After adding healthchecks to infrastructure services, the Spring Boot service <code>depends_on</code> was updated to use <code>condition: service_healthy</code> instead of just listing the service name.</p>
+
+<table>
+    <tr><th>Old style</th><th>New style</th><th>Difference</th></tr>
+    <tr><td><code>depends_on: - mysql</code></td><td><code>depends_on: mysql: condition: service_healthy</code></td><td>Old: waits for container to start. New: waits for healthcheck to pass.</td></tr>
+</table>
+
+<pre>
+user-service:
+  depends_on:
+    mysql:
+      condition: service_healthy    ← wait until mysqladmin ping succeeds
+    redis:
+      condition: service_healthy    ← wait until redis-cli ping succeeds
+    kafka:
+      condition: service_healthy    ← wait until kafka-broker-api-versions succeeds
+</pre>
+
+<p>For Spring Boot services (account-service, transaction-service, api-gateway) that depend on each other,
+<code>condition: service_started</code> is used instead of <code>service_healthy</code> because Spring Boot
+services don't have healthcheck commands defined. <code>restart: on-failure</code> handles retries for these.</p>
+
+<div class="note">
+<strong>Why not service_healthy for Spring Boot services?</strong> Adding a healthcheck to a Spring Boot service requires
+the <code>spring-boot-starter-actuator</code> dependency, which exposes a <code>/actuator/health</code> endpoint.
+This is a good future addition. For now, <code>service_started</code> + <code>restart: on-failure</code> achieves the same effect.
+</div>
+
+<h3>build: context</h3>
+<p>Previously docker-compose only referenced pre-built images (<code>image: user-service:latest</code>).
+Running <code>docker-compose up</code> would fail if the image didn't already exist &mdash; you had to
+manually run <code>docker build</code> for each service first.</p>
+
+<p>Adding <code>build:</code> to each service tells Docker Compose to build the image automatically if it doesn't exist:</p>
+<pre>
+user-service:
+  build: ./user-service      ← path to folder containing the Dockerfile
+  image: user-service:latest ← tag to give the built image
+  ...
+</pre>
+
+<p>Now <code>docker-compose up --build</code> builds all images from their Dockerfiles and starts everything in one command.
+The <code>image:</code> field is still kept so the built image gets a predictable name/tag for reuse.</p>
+
+<div class="page-break"></div>
+
+<!-- ==================== CURRENT STATE ==================== -->
+<h2>Current Project State &mdash; Full Summary</h2>
+
+<table>
+    <tr><th>Service</th><th>Port</th><th>Key Features</th></tr>
+    <tr>
+        <td>user-service</td>
+        <td>8081</td>
+        <td>JWT with userId claim, BCrypt passwords, Redis caching (@Cacheable), Kafka consumer (account-created)</td>
+    </tr>
+    <tr>
+        <td>account-service</td>
+        <td>8082</td>
+        <td>Feign to user-service, @Async Kafka publish (ThreadPoolTaskExecutor), Saga event consumer (debit/credit/compensate), Dashboard API (aggregates user + accounts)</td>
+    </tr>
+    <tr>
+        <td>transaction-service</td>
+        <td>8083</td>
+        <td>Feign to account-service, Saga orchestration via Kafka (choreography), transfer history</td>
+    </tr>
+    <tr>
+        <td>api-gateway</td>
+        <td>8080</td>
+        <td>Spring Cloud Gateway (WebFlux), GlobalFilter JWT validation, URL-based routing to 3 services</td>
+    </tr>
+    <tr>
+        <td>React frontend</td>
+        <td>5173 (Vite)</td>
+        <td>Login, Dashboard with account cards, Transfer form, Transaction history, ProtectedRoute, Axios interceptor</td>
+    </tr>
+</table>
+
+<h2>Technologies covered across all 6 documents</h2>
+<table>
+    <tr><th>Technology</th><th>Where used</th><th>Document</th></tr>
+    <tr><td>Spring Boot + JPA + REST</td><td>All services</td><td>Doc 1</td></tr>
+    <tr><td>JWT (stateless auth)</td><td>user-service, api-gateway</td><td>Doc 1, Doc 4, Doc 6</td></tr>
+    <tr><td>OpenFeign (sync HTTP)</td><td>account-service → user-service, transaction-service → account-service</td><td>Doc 1</td></tr>
+    <tr><td>Kafka (async events)</td><td>account-service (producer), user-service + account-service (consumers)</td><td>Doc 1, Doc 2, Doc 3</td></tr>
+    <tr><td>Redis (@Cacheable)</td><td>user-service</td><td>Doc 2</td></tr>
+    <tr><td>Docker (basic)</td><td>All services + infra</td><td>Doc 2, Doc 4</td></tr>
+    <tr><td>Kubernetes (Deployment, Service)</td><td>All services + infra</td><td>Doc 2</td></tr>
+    <tr><td>@Async + ThreadPoolTaskExecutor (Multithreading)</td><td>account-service Kafka publish</td><td>Doc 3</td></tr>
+    <tr><td>Saga Pattern (choreography)</td><td>transaction-service + account-service</td><td>Doc 3</td></tr>
+    <tr><td>Spring Cloud Gateway + GlobalFilter</td><td>api-gateway</td><td>Doc 4</td></tr>
+    <tr><td>React + Vite + Tailwind v4</td><td>banking-frontend</td><td>Doc 5</td></tr>
+    <tr><td>JWT custom claims</td><td>user-service, api-gateway, frontend</td><td>Doc 6</td></tr>
+    <tr><td>Docker multi-stage builds + .dockerignore</td><td>All 4 services</td><td>Doc 6</td></tr>
+    <tr><td>docker-compose healthchecks + conditions</td><td>MySQL, Redis, Kafka</td><td>Doc 6</td></tr>
+    <tr><td>JVM container memory tuning</td><td>All 4 services (Dockerfile)</td><td>Doc 6</td></tr>
+</table>
+
+<!-- ==================== ERRORS ==================== -->
+<h2 id="errors">Common Errors and Fixes (Phase 6)</h2>
+
+<table>
+    <tr><th>Error</th><th>Cause</th><th>Fix</th></tr>
+    <tr>
+        <td>Connection to node -1 (localhost:9093) could not be established</td>
+        <td>Service running locally (outside Docker) trying to reach Kafka; port 9092 or 9093 mismatch</td>
+        <td>Use <code>localhost:9093</code> in application.yaml for local dev (EXTERNAL listener). Docker env var <code>SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092</code> overrides it inside containers.</td>
+    </tr>
+    <tr>
+        <td>OOMKilled — container terminated by Docker</td>
+        <td>JVM sized heap based on host machine RAM, not container memory limit</td>
+        <td>Add <code>-XX:MaxRAMPercentage=75.0</code> to ENTRYPOINT in Dockerfile</td>
+    </tr>
+    <tr>
+        <td>docker build slow every time — re-downloads all Maven dependencies</td>
+        <td>Source code and pom.xml copied together; any code change busts all layers</td>
+        <td>Copy pom.xml first, run <code>mvn dependency:go-offline</code>, then copy src/. This caches the dependency layer.</td>
+    </tr>
+    <tr>
+        <td>COPY target/...jar: no such file or directory</td>
+        <td>Single-stage Dockerfile requires pre-built JAR but mvn package was not run first</td>
+        <td>Switch to multi-stage build — Maven runs inside Docker in Stage 1, no manual mvn needed</td>
+    </tr>
+    <tr>
+        <td>getClaims().get("userId") returns null</td>
+        <td>generateToken() was not updated to add the userId claim</td>
+        <td>Add <code>.claim("userId", userId)</code> to the Jwts.builder() chain and pass userId to generateToken()</td>
+    </tr>
+    <tr>
+        <td>Cannot cast claim to Integer — ClassCastException</td>
+        <td>JSON numbers in JWT payload may deserialize as Integer or Long depending on value size</td>
+        <td>Use <code>Integer.class</code> consistently. If userId values exceed Integer.MAX_VALUE, switch to <code>Long.class</code>.</td>
+    </tr>
+    <tr>
+        <td>depends_on: service_healthy fails — service never becomes healthy</td>
+        <td>Healthcheck command not found inside container, or command path is wrong</td>
+        <td>Run <code>docker exec -it container-name bash</code> and test the healthcheck command manually inside the container.</td>
+    </tr>
+    <tr>
+        <td>docker-compose up fails: image not found (no local image)</td>
+        <td>docker-compose.yml has <code>image:</code> but no <code>build:</code>; image was never built</td>
+        <td>Add <code>build: ./service-folder</code> to each service in docker-compose.yml. Run <code>docker-compose up --build</code>.</td>
+    </tr>
+</table>
+
+<br/><br/>
+<hr/>
+<p style="color:#888; font-size:10pt; text-align:center;">
+    Banking System Learning Document 6 &mdash; Phase 6 Complete<br/>
+    System now has: 4 microservices + React frontend + hardened Docker setup<br/>
+    Next: AWS (EKS, RDS, ElastiCache, MSK) &rarr; Design Patterns (Factory, Builder, Observer)
+</p>
+
+</body>
+</html>

@@ -15,4 +15,5 @@ public class TransactionResponse {
     private TransactionTypes type;
     private String status;
     private LocalDateTime timestamp;
+    private Double transactionFee;
 }

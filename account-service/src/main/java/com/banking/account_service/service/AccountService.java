@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface AccountService {
-    String createAccount(CreateAccountRequest request);
+    Account createAccount(CreateAccountRequest request);
 
     List<Account> getAllAccounts(Integer userId);
 
